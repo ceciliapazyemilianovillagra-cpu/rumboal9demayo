@@ -65,8 +65,8 @@ function Dashboard({ onExit }: { onExit: () => void }) {
 
       <div className="page">
         <section className="hero-row">
-          <div><p className="kicker">MIÉRCOLES, 22 DE JULIO</p><h1>Buen día, María.</h1><span>Este es el pulso de la campaña.</span></div>
-          <div className="countdown"><span>CUENTA REGRESIVA</span><strong>291</strong><b>DÍAS</b><small>HASTA EL 9 DE MAYO</small></div>
+          <div><p className="kicker">JUEVES, 23 DE JULIO</p><h1>Buen día, María.</h1><span>Este es el pulso de la campaña.</span></div>
+          <div className="countdown"><span>CUENTA REGRESIVA</span><strong>290</strong><b>DÍAS</b><small>HASTA EL 9 DE MAYO</small></div>
         </section>
 
         <section className="stats-grid">
