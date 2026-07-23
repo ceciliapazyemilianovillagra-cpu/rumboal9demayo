@@ -9,6 +9,7 @@ type Profile = { id: string; full_name: string; role: Role; active: boolean; is_
 type Organization = {
   id: string; name: string; candidate_name: string; position_sought: string | null;
   slug: string; primary_color: string; accent_color: string; active: boolean;
+  logo_url?:string|null; plan_name?:string; license_status?:string; license_expires_at?:string|null;
 };
 type Team = { id: string; organization_id: string; name: string; description: string | null; active: boolean };
 type Member = {
@@ -29,6 +30,8 @@ type Project = { id:number; name:string; objective:string; status:string; priori
 type Proposal = { id:number; title:string; theme:string; diagnosis:string; solution:string; beneficiaries:string|null; status:string; responsible_user_id:string|null; source_claim_id:number|null; project_id:number|null };
 type Activity = { id:number; title:string; activity_type:string; description:string|null; starts_at:string; ends_at:string|null; location:string|null; headquarters_id:number|null; team_id:string|null; responsible_user_id:string|null; status:string };
 type Referent = { id:number; full_name:string; phone:string|null; email:string|null; referent_type:string; neighborhood:string|null; circuit:string|null; zone:string|null; headquarters_id:number|null; team_id:string|null; reports_to_user_id:string|null; influence_level:string; status:string; notes:string|null };
+type VoterImport = { id:string; file_name:string; file_size:number|null; source_format:string; status:string; detected_columns:string[]; total_rows:number; processed_rows:number; error_rows:number; created_at:string };
+type AuditItem = { id:number; entity_type:string; entity_id:string; action:string; details:Record<string,unknown>; created_at:string; actor_id:string|null };
 const configurableModules=[["votantes","Votantes"],["sedes","Sedes"],["presupuesto","Presupuesto"],["gestion","Reclamos y proyectos"],["agenda","Agenda"],["propuestas","Propuestas"],["territorio","Territorio y referentes"]] as const;
 
 const roleLabels: Record<Role, string> = {
@@ -183,7 +186,7 @@ function HeadquartersView({ organization, teams, members, items, reload }: {
   </section>;
 }
 
-function VotersView() {
+function VotersPlan() {
   return <section>
     <ModuleTitle kicker="BASE ELECTORAL" title="Votantes" subtitle="Preparado para recibir el padrón oficial cuando la Junta Electoral defina su formato." />
     <article className="panel voter-plan">
@@ -195,6 +198,41 @@ function VotersView() {
       </div>
       <div className="info-banner">No cargaremos datos ficticios ahora. Así evitamos rehacer la base cuando llegue el padrón definitivo.</div>
     </article>
+  </section>;
+}
+
+function VotersView({user,organization,items,reload}:{user:User;organization:Organization;items:VoterImport[];reload:()=>Promise<void>}) {
+  const [message,setMessage]=useState("");
+  const [busy,setBusy]=useState(false);
+  async function prepareImport(event:FormEvent<HTMLFormElement>){
+    event.preventDefault();setBusy(true);setMessage("");
+    const form=event.currentTarget,file=new FormData(form).get("padron") as File;
+    const extension=file.name.split(".").pop()?.toLowerCase();
+    let columns:string[]=[];
+    if(extension==="csv"){
+      const firstLine=(await file.slice(0,65536).text()).replace(/^\uFEFF/,"").split(/\r?\n/)[0]||"";
+      const separator=firstLine.includes(";")?";":",";
+      columns=firstLine.split(separator).map(x=>x.trim().replace(/^['"]|['"]$/g,"")).filter(Boolean);
+    }
+    const {error}=await supabase.from("voter_imports").insert({
+      organization_id:organization.id,file_name:file.name,file_size:file.size,
+      source_format:extension==="csv"?"csv":extension==="xlsx"?"xlsx":"other",
+      detected_columns:columns,status:columns.length?"mapeo":"analisis",created_by:user.id,
+      notes:"Archivo registrado para análisis seguro. El contenido no se envió desde el navegador."
+    });
+    if(error)setMessage("No se pudo preparar la importación.");
+    else{form.reset();setMessage(columns.length?`Archivo analizado: ${columns.length} columnas detectadas.`:"Archivo registrado para análisis.");await reload();}
+    setBusy(false);
+  }
+  return <section>
+    <ModuleTitle kicker="BASE ELECTORAL" title="Votantes" subtitle="Importación controlada y preparada para padrones de más de un millón de registros." />
+    <article className="panel voter-plan">
+      <div className="voter-hero"><span>1M+</span><div><p className="kicker">ESCALA PREVISTA</p><h2>Preparación segura del padrón</h2><p>Detecta columnas, registra el formato y deja listo el mapeo sin exponer información sensible.</p></div></div>
+      <div className="plan-grid"><div><b>1</b><strong>Analizar</strong><span>CSV o Excel entregado por la Junta.</span></div><div><b>2</b><strong>Mapear</strong><span>DNI, circuito, escuela, mesa y variables reales.</span></div><div><b>3</b><strong>Importar</strong><span>Por lotes, con duplicados y reporte de errores.</span></div></div>
+      <form className="voter-import-form" onSubmit={prepareImport}><div><strong>Preparar un padrón</strong><span>Analiza encabezados y formato sin subir datos sensibles todavía.</span></div><input name="padron" type="file" accept=".csv,.xlsx" required/><button className="primary compact" disabled={busy}>{busy?"Analizando...":"Analizar archivo"}</button></form>
+      {message&&<div className="info-banner">{message}</div>}
+    </article>
+    <article className="panel"><PanelHead kicker="IMPORTACIONES" title="Historial de preparación" aside={`${items.length} archivos`}/>{items.length===0?<Empty title="Sin archivos analizados" text="Cuando llegue una muestra real del padrón, analizala desde el botón superior."/>:<div className="import-list">{items.map(item=><div key={item.id}><span>CSV</span><div><strong>{item.file_name}</strong><small>{item.detected_columns?.length||0} columnas · {item.status} · {new Date(item.created_at).toLocaleDateString("es-AR")}</small></div><b>{item.processed_rows}/{item.total_rows}</b></div>)}</div>}</article>
   </section>;
 }
 
@@ -229,8 +267,9 @@ function ProposalsView({user,organization,members,claims,projects,items,reload}:
   <article className="panel"><PanelHead kicker="BANCO DE PROPUESTAS" title="Iniciativas del espacio" aside={`${items.length} propuestas`}/>{items.length===0?<Empty title="Todavía no hay propuestas" text="Creá la primera iniciativa a partir de un problema territorial."/>:<div className="proposal-list">{items.map(p=><div key={p.id}><span>◆</span><div><strong>{p.title}</strong><small>{p.theme} · {p.beneficiaries||"Alcance a definir"}</small></div><select value={p.status} onChange={e=>changeStatus(p.id,e.target.value)}><option value="borrador">Borrador</option><option value="en_revision">En revisión</option><option value="aprobada">Aprobada</option><option value="publicada">Publicada</option><option value="archivada">Archivada</option></select></div>)}</div>}</article>{message&&<button className="toast" onClick={()=>setMessage("")}>{message}<span>×</span></button>}</section>;
 }
 
-function AdminView({ profile, organization, organizations, teams, members, reloadAll, selectOrganization }: {
+function AdminView({ profile, organization, organizations, teams, members, auditItems, reloadAll, selectOrganization }: {
   profile: Profile; organization: Organization; organizations: Organization[]; teams: Team[]; members: Member[];
+  auditItems:AuditItem[];
   reloadAll: () => Promise<void>; selectOrganization: (id: string) => void;
 }) {
   const [teamOpen, setTeamOpen] = useState(false);
@@ -329,6 +368,16 @@ function AdminView({ profile, organization, organizations, teams, members, reloa
     await supabase.from("memberships").insert({ organization_id: org.id, user_id: profile.id, team_id: team?.id ?? null, role: "admin" });
     form.reset(); setOrgOpen(false); await reloadAll(); selectOrganization(org.id);
   }
+  async function saveBrand(event:FormEvent<HTMLFormElement>){
+    event.preventDefault();const form=event.currentTarget,data=new FormData(form);
+    const {error}=await supabase.from("organizations").update({
+      candidate_name:data.get("candidate_name"),position_sought:data.get("position_sought")||null,
+      primary_color:data.get("primary_color"),accent_color:data.get("accent_color"),
+      plan_name:profile.is_platform_admin?data.get("plan_name"):organization.plan_name,
+      license_status:profile.is_platform_admin?data.get("license_status"):organization.license_status
+    }).eq("id",organization.id);
+    setMessage(error?"No se pudo guardar la personalización.":"Personalización guardada.");if(!error)await reloadAll();
+  }
 
   return <section>
     <ModuleTitle kicker="CONFIGURACIÓN CENTRAL" title="Administración" subtitle="Espacios políticos, equipos, personas y permisos." />
@@ -337,6 +386,7 @@ function AdminView({ profile, organization, organizations, teams, members, reloa
       <article><span>{teams.length}</span><b>equipos en {organization.name}</b></article>
       <article><span>{members.length}</span><b>usuarios asignados</b></article>
     </div>
+    <article className="panel admin-section"><PanelHead kicker="MARCA Y LICENCIA" title="Personalización del espacio"/><form className="brand-form" onSubmit={saveBrand}><label>Candidato/a<input name="candidate_name" defaultValue={organization.candidate_name} required/></label><label>Cargo<input name="position_sought" defaultValue={organization.position_sought||""}/></label><label>Color principal<input name="primary_color" type="color" defaultValue={organization.primary_color}/></label><label>Color de acento<input name="accent_color" type="color" defaultValue={organization.accent_color}/></label>{profile.is_platform_admin&&<><label>Plan<select name="plan_name" defaultValue={organization.plan_name||"base"}><option value="base">Base</option><option value="profesional">Profesional</option><option value="campaña">Campaña</option></select></label><label>Licencia<select name="license_status" defaultValue={organization.license_status||"active"}><option value="trial">Prueba</option><option value="active">Activa</option><option value="suspended">Suspendida</option><option value="expired">Vencida</option></select></label></>}<button className="primary compact">Guardar configuración</button></form></article>
     {profile.is_platform_admin && <article className="panel admin-section">
       <PanelHead kicker="PLATAFORMA MULTICLIENTE" title="Espacios políticos" aside={<button className="text-button" onClick={() => setOrgOpen(!orgOpen)}>＋ Crear espacio</button>} />
       {orgOpen && <form className="inline-form" onSubmit={createOrganization}>
@@ -372,13 +422,14 @@ function AdminView({ profile, organization, organizations, teams, members, reloa
         <div className="info-banner compact-info">Cada invitado recibirá un enlace para confirmar su cuenta y crear su contraseña. Nunca necesitás conocer su clave.</div>
       </article>
     </div>
+    <article className="panel admin-section"><PanelHead kicker="SEGURIDAD Y TRAZABILIDAD" title="Actividad reciente" aside={`${auditItems.length} cambios`}/>{auditItems.length===0?<Empty title="Sin cambios para mostrar" text="Las nuevas modificaciones de usuarios, reclamos, proyectos y territorio aparecerán aquí."/>:<div className="audit-list">{auditItems.map(item=><div key={item.id}><span>{item.action.slice(0,1).toUpperCase()}</span><div><strong>{item.entity_type}</strong><small>{item.action} · registro {item.entity_id}</small></div><time>{new Date(item.created_at).toLocaleString("es-AR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}</time></div>)}</div>}</article>
     {message && <button className="toast" onClick={() => setMessage("")}>{message}<span>×</span></button>}
   </section>;
 }
 
-function HomeDashboard({ organization, organizations, canAdmin, selectOrganization, teams, members, headquarters, entries, claims, projects, activities, go }: {
+function HomeDashboard({ organization, organizations, canAdmin, selectOrganization, teams, members, headquarters, entries, claims, projects, activities, referents, go }: {
   organization: Organization; organizations: Organization[]; canAdmin: boolean; selectOrganization: (id: string) => void;
-  teams: Team[]; members: Member[]; headquarters: Headquarters[]; entries: BudgetEntry[]; claims:Claim[]; projects:Project[]; activities:Activity[]; go: (id: string) => void;
+  teams: Team[]; members: Member[]; headquarters: Headquarters[]; entries: BudgetEntry[]; claims:Claim[]; projects:Project[]; activities:Activity[]; referents:Referent[]; go: (id: string) => void;
 }) {
   const totals = entries.reduce((acc, item) => { if (item.status !== "cancelado") acc[item.kind] += Number(item.amount); return acc; }, { ingreso: 0, gasto: 0, compromiso: 0 });
   const target = new Date();
@@ -397,6 +448,7 @@ function HomeDashboard({ organization, organizations, canAdmin, selectOrganizati
       <article className="panel agenda"><PanelHead kicker="PRÓXIMAS ACTIVIDADES" title="Agenda del equipo" aside={<button className="text-button" onClick={()=>go("agenda")}>Ver agenda</button>} />{activities.filter(a=>new Date(a.starts_at)>=new Date()).slice(0,4).map(a=><div className="task" key={a.id}><i className="blue"/><div><strong>{a.title}</strong><span>{new Date(a.starts_at).toLocaleString("es-AR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})} · {a.location||"Lugar a definir"}</span></div><em>{a.status}</em></div>)}{activities.filter(a=>new Date(a.starts_at)>=new Date()).length===0&&<Empty title="Agenda libre" text="Cargá reuniones, recorridas y eventos desde Agenda."/>}</article>
     </section>
     <section className="dashboard-operations"><article className="panel"><PanelHead kicker="CALENDARIO" title={new Date().toLocaleDateString("es-AR",{month:"long",year:"numeric"})}/><MonthCalendar activities={activities}/></article><article className="panel"><PanelHead kicker="GESTIÓN TERRITORIAL" title="Situación actual"/><div className="operation-numbers"><div><b>{claims.filter(c=>!["resuelto","cerrado"].includes(c.status)).length}</b><span>reclamos pendientes</span></div><div><b>{claims.filter(c=>c.priority==="urgente").length}</b><span>casos urgentes</span></div><div><b>{projects.filter(p=>!["completado","cancelado"].includes(p.status)).length}</b><span>proyectos activos</span></div><div><b>{activities.filter(a=>new Date(a.starts_at)>=new Date()).length}</b><span>actividades próximas</span></div></div></article></section>
+    <section className="results-strip"><article><b>{claims.length?Math.round(claims.filter(c=>["resuelto","cerrado"].includes(c.status)).length/claims.length*100):0}%</b><span>reclamos resueltos</span></article><article><b>{new Set(referents.map(r=>r.neighborhood).filter(Boolean)).size}</b><span>barrios cubiertos</span></article><article><b>{referents.filter(r=>r.status==="activo").length}</b><span>referentes activos</span></article><article><b>{projects.filter(p=>p.status==="completado").length}</b><span>proyectos completados</span></article></section>
     <section className="quick-section"><div><p className="kicker">ACCESOS RÁPIDOS</p><h2>¿Qué necesitás hacer?</h2></div><div className="quick-grid">
       <button onClick={() => go("admin")}><span>⚙</span><b>Configurar equipos</b><small>Personas, roles y espacios</small></button>
       <button onClick={() => go("sedes")}><span>⌂</span><b>Crear sede</b><small>Asignar equipo y responsable</small></button>
@@ -447,6 +499,8 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [referents, setReferents] = useState<Referent[]>([]);
+  const [voterImports, setVoterImports] = useState<VoterImport[]>([]);
+  const [auditItems, setAuditItems] = useState<AuditItem[]>([]);
   const [menuOpen,setMenuOpen]=useState(false);
   const [notice, setNotice] = useState("");
   const organization = organizations.find((org) => org.id === organizationId) ?? organizations[0];
@@ -462,7 +516,7 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
   }, []);
   const loadContext = useCallback(async () => {
     if (!organizationId) return;
-    const [teamResult, memberResult, sedeResult, budgetResult, claimResult, projectResult, proposalResult, activityResult, referentResult] = await Promise.all([
+    const [teamResult, memberResult, sedeResult, budgetResult, claimResult, projectResult, proposalResult, activityResult, referentResult,importResult,auditResult] = await Promise.all([
       supabase.from("teams").select("*").eq("organization_id", organizationId).eq("active", true).order("name"),
       supabase.from("memberships").select("organization_id,user_id,team_id,role,active,allowed_modules,profiles(id,full_name,active)").eq("organization_id", organizationId),
       supabase.from("headquarters").select("id,name,address,circuit,phone,team_id,responsible_user_id,active").eq("organization_id", organizationId).eq("active", true).order("name"),
@@ -472,6 +526,8 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
       supabase.from("proposals").select("*").eq("organization_id",organizationId).order("created_at",{ascending:false}).limit(200),
       supabase.from("activities").select("*").eq("organization_id",organizationId).order("starts_at",{ascending:true}).limit(300),
       supabase.from("territorial_referents").select("*").eq("organization_id",organizationId).order("full_name").limit(500),
+      supabase.from("voter_imports").select("*").eq("organization_id",organizationId).order("created_at",{ascending:false}).limit(25),
+      supabase.from("audit_log").select("id,entity_type,entity_id,action,details,created_at,actor_id").eq("organization_id",organizationId).order("created_at",{ascending:false}).limit(50),
     ]);
     setTeams((teamResult.data ?? []) as Team[]);
     setMembers((memberResult.data ?? []) as unknown as Member[]);
@@ -482,6 +538,8 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
     setProposals(proposalResult.error?[]:(proposalResult.data??[]) as Proposal[]);
     setActivities(activityResult.error?[]:(activityResult.data??[]) as Activity[]);
     setReferents(referentResult.error?[]:(referentResult.data??[]) as Referent[]);
+    setVoterImports(importResult.error?[]:(importResult.data??[]) as VoterImport[]);
+    setAuditItems(auditResult.error?[]:(auditResult.data??[]) as AuditItem[]);
   }, [organizationId]);
   useEffect(() => { void loadOrganizations(); }, [loadOrganizations]);
   useEffect(() => { void loadContext(); }, [loadContext]);
@@ -506,21 +564,21 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
   if (!organization) return <main className="access-state"><Logo /><h1>Sin espacio asignado</h1><p>Tu cuenta está activa, pero aún no pertenece a una organización política.</p><button className="primary compact" onClick={() => void supabase.auth.signOut()}>Cerrar sesión</button></main>;
 
   const initials = profile.full_name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
-  return <main className="app-shell">
+  return <main className="app-shell" style={{"--navy":organization.primary_color,"--sun":organization.accent_color} as React.CSSProperties}>
     <header className="topbar">
       <div className="topbar-brand"><button className="menu-trigger" aria-label="Abrir menú" onClick={()=>setMenuOpen(true)}>☰</button><Logo compact /></div>
       <button className="profile" onClick={() => void supabase.auth.signOut()} title="Cerrar sesión"><span>{initials}</span><b>{profile.full_name}</b><em>{roleLabels[orgRole]}</em><small>Salir</small></button>
     </header>
     <div className="page">
-      {active === "inicio" && <HomeDashboard organization={organization} organizations={organizations} canAdmin={canAdmin} selectOrganization={setOrganizationId} teams={teams} members={members} headquarters={headquarters} entries={entries} claims={claims} projects={projects} activities={activities} go={go} />}
-      {active === "votantes" && <VotersView />}
+      {active === "inicio" && <HomeDashboard organization={organization} organizations={organizations} canAdmin={canAdmin} selectOrganization={setOrganizationId} teams={teams} members={members} headquarters={headquarters} entries={entries} claims={claims} projects={projects} activities={activities} referents={referents} go={go} />}
+      {active === "votantes" && <VotersView user={session.user} organization={organization} items={voterImports} reload={loadContext}/>}
       {active === "sedes" && <HeadquartersView organization={organization} teams={teams} members={members} items={headquarters} reload={loadContext} />}
       {active === "presupuesto" && <Budget user={session.user} organization={organization} entries={entries} reload={loadContext} />}
       {active === "gestion" && <ManagementView user={session.user} organization={organization} teams={teams} members={members} headquarters={headquarters} claims={claims} projects={projects} reload={loadContext} />}
       {active === "propuestas" && <ProposalsView user={session.user} organization={organization} members={members} claims={claims} projects={projects} items={proposals} reload={loadContext}/>}
       {active === "agenda" && <AgendaView user={session.user} organization={organization} teams={teams} members={members} headquarters={headquarters} items={activities} reload={loadContext}/>}
       {active === "territorio" && <TerritoryView user={session.user} organization={organization} teams={teams} members={members} headquarters={headquarters} items={referents} reload={loadContext}/>}
-      {active === "admin" && <AdminView profile={profile} organization={organization} organizations={organizations} teams={teams} members={members} reloadAll={reloadAll} selectOrganization={setOrganizationId} />}
+      {active === "admin" && <AdminView profile={profile} organization={organization} organizations={organizations} teams={teams} members={members} auditItems={auditItems} reloadAll={reloadAll} selectOrganization={setOrganizationId} />}
     </div>
     {menuOpen&&<button className="menu-backdrop" aria-label="Cerrar menú" onClick={()=>setMenuOpen(false)}/>}<aside className={`side-menu ${menuOpen?"open":""}`}><div className="side-menu-head"><Logo compact/><button onClick={()=>setMenuOpen(false)}>×</button></div><p className="kicker">MÓDULOS HABILITADOS</p><nav aria-label="Navegación principal">{modules.map(item=><button className={active===item.id?"active":""} onClick={()=>go(item.id)} key={item.id}><span>{item.icon}</span>{item.label}</button>)}</nav><div className="side-user"><b>{profile.full_name}</b><span>{roleLabels[orgRole]} · {organization.name}</span></div></aside>
     {notice && <button className="toast" onClick={() => setNotice("")}>{notice}<span>×</span></button>}
