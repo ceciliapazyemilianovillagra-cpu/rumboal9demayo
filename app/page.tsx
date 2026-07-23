@@ -227,6 +227,7 @@ function AdminView({ profile, organization, organizations, teams, members, reloa
   const [teamOpen, setTeamOpen] = useState(false);
   const [orgOpen, setOrgOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [bulkOpen, setBulkOpen] = useState(false);
   const [inviting, setInviting] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -259,7 +260,7 @@ function AdminView({ profile, organization, organizations, teams, members, reloa
     });
     if (error || result?.error) setMessage(result?.error || "No se pudo enviar la invitación.");
     else {
-      setMessage(result.message);
+      setMessage(result.status === "existing" ? "Usuario existente agregado al equipo." : "Invitación enviada correctamente.");
       form.reset();
       setInviteOpen(false);
       await reloadAll();
@@ -273,6 +274,31 @@ function AdminView({ profile, organization, organizations, teams, members, reloa
       .eq("organization_id", organization.id).eq("user_id", member.user_id);
     if (error) setMessage("No se pudo cambiar el estado del usuario.");
     else await reloadAll();
+  }
+
+  async function removeMember(member: Member) {
+    if (member.user_id === profile.id) return setMessage("No podés borrar tu propio acceso.");
+    if (!window.confirm(`¿Borrar a ${member.profiles?.full_name || "este usuario"}?`)) return;
+    const { data, error } = await supabase.functions.invoke("invite-team-member", { body: { action: "remove", organization_id: organization.id, user_id: member.user_id } });
+    setMessage(error || data?.error ? (data?.error || "No se pudo borrar el usuario.") : "Usuario eliminado correctamente.");
+    if (!error && !data?.error) await reloadAll();
+  }
+
+  async function bulkInvite(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setInviting(true);
+    const file = new FormData(event.currentTarget).get("csv") as File;
+    const lines = (await file.text()).replace(/^\uFEFF/, "").split(/\r?\n/).filter(Boolean);
+    const separator = lines[0]?.includes(";") ? ";" : ",";
+    let success = 0; let failed = 0;
+    for (const line of lines.slice(1, 101)) {
+      const [full_name, email, teamName, roleName] = line.split(separator).map((v) => v.trim());
+      const team = teams.find((t) => t.name.toLowerCase() === (teamName || "").toLowerCase());
+      const role = Object.keys(roleLabels).includes(roleName) ? roleName : "territorio";
+      const { data, error } = await supabase.functions.invoke("invite-team-member", { body: { organization_id: organization.id, full_name, email, team_id: team?.id || null, role } });
+      if (error || data?.error) failed++; else success++;
+    }
+    setMessage(`Carga finalizada: ${success} procesados${failed ? ` y ${failed} con error` : ""}.`);
+    setInviting(false); setBulkOpen(false); await reloadAll();
   }
 
   async function createOrganization(event: FormEvent<HTMLFormElement>) {
@@ -312,7 +338,8 @@ function AdminView({ profile, organization, organizations, teams, members, reloa
         <div className="team-list">{teams.map((team) => <div key={team.id}><span>{team.name.slice(0, 2).toUpperCase()}</span><div><strong>{team.name}</strong><small>{team.description || "Sin descripción"}</small></div><em>{members.filter((m) => m.team_id === team.id).length} personas</em></div>)}</div>
       </article>
       <article className="panel admin-section">
-        <PanelHead kicker="PERSONAS Y PERMISOS" title="Usuarios" aside={<button className="text-button" onClick={() => setInviteOpen(!inviteOpen)}>＋ Invitar usuario</button>} />
+        <PanelHead kicker="PERSONAS Y PERMISOS" title="Usuarios" aside={<div className="user-tools"><button className="text-button" onClick={() => setBulkOpen(!bulkOpen)}>⇧ Carga masiva</button><button className="text-button" onClick={() => setInviteOpen(!inviteOpen)}>＋ Invitar usuario</button></div>} />
+        {bulkOpen && <form className="bulk-form" onSubmit={bulkInvite}><div><strong>Cargar CSV</strong><small>nombre; email; equipo; rol (máximo 100)</small></div><input name="csv" type="file" accept=".csv,text/csv" required /><button className="primary compact" disabled={inviting}>{inviting ? "Procesando..." : "Cargar"}</button></form>}
         {inviteOpen && <form className="invite-form" onSubmit={inviteMember}>
           <div><label>Nombre completo<input name="full_name" required placeholder="Ana Páez" /></label><label>Correo electrónico<input name="email" required type="email" placeholder="ana@correo.com" /></label></div>
           <div><label>Equipo<select name="team_id"><option value="">Sin equipo</option>{teams.map((team) => <option value={team.id} key={team.id}>{team.name}</option>)}</select></label><label>Rol<select name="role" defaultValue="territorio">{Object.entries(roleLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label></div>
@@ -323,7 +350,7 @@ function AdminView({ profile, organization, organizations, teams, members, reloa
           <div><strong>{member.profiles?.full_name}</strong><small>{member.active ? "Usuario habilitado" : "Acceso desactivado"}</small></div>
           <select aria-label="Equipo" disabled={!member.active} value={member.team_id ?? ""} onChange={(e) => updateMember(member.user_id, "team_id", e.target.value)}><option value="">Sin equipo</option>{teams.map((t) => <option value={t.id} key={t.id}>{t.name}</option>)}</select>
           <select aria-label="Rol" disabled={!member.active} value={member.role} onChange={(e) => updateMember(member.user_id, "role", e.target.value)}>{Object.entries(roleLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select>
-          <button className={`member-toggle ${member.active ? "deactivate" : "activate"}`} disabled={member.user_id === profile.id} onClick={() => toggleMember(member)}>{member.active ? "Desactivar" : "Activar"}</button>
+          <div className="member-actions"><button className={`member-toggle ${member.active ? "deactivate" : "activate"}`} disabled={member.user_id === profile.id} onClick={() => toggleMember(member)}>{member.active ? "Desactivar" : "Activar"}</button><button className="member-delete" disabled={member.user_id === profile.id} onClick={() => removeMember(member)}>Borrar</button></div>
         </div>)}</div>
         <div className="info-banner compact-info">Cada invitado recibirá un enlace para confirmar su cuenta y crear su contraseña. Nunca necesitás conocer su clave.</div>
       </article>

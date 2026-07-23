@@ -30,23 +30,28 @@ Deno.serve(async (request) => {
     if (callerError || !callerData.user) return json({ error: "Sesión inválida." }, 401);
 
     const body = await request.json();
+    const action = String(body.action ?? "invite");
+    const organizationId = String(body.organization_id ?? "");
+    const { data: callerProfile } = await admin.from("profiles").select("is_platform_admin,active").eq("id", callerData.user.id).single();
+    const { data: callerMembership } = await admin.from("memberships").select("role,active").eq("organization_id", organizationId).eq("user_id", callerData.user.id).maybeSingle();
+    const authorized = callerProfile?.active && (callerProfile.is_platform_admin || (callerMembership?.active && callerMembership.role === "admin"));
+    if (!authorized) return json({ error: "No tenes permisos para administrar usuarios." }, 403);
+    if (action === "remove") {
+      const userId = String(body.user_id ?? "");
+      if (!userId || userId === callerData.user.id) return json({ error: "No podes borrar tu propio acceso." }, 400);
+      const { error } = await admin.from("memberships").delete().eq("organization_id", organizationId).eq("user_id", userId);
+      if (error) return json({ error: "No se pudo borrar el usuario." }, 500);
+      const { count } = await admin.from("memberships").select("*", { count: "exact", head: true }).eq("user_id", userId);
+      if (!count) await admin.auth.admin.deleteUser(userId);
+      return json({ ok: true, status: "removed" });
+    }
     const email = String(body.email ?? "").trim().toLowerCase();
     const fullName = String(body.full_name ?? "").trim();
-    const organizationId = String(body.organization_id ?? "");
     const teamId = body.team_id ? String(body.team_id) : null;
     const role = String(body.role ?? "consulta");
     if (!email.includes("@") || fullName.length < 2 || !organizationId || !allowedRoles.has(role)) {
       return json({ error: "Revisá el nombre, correo y rol." }, 400);
     }
-
-    const { data: callerProfile } = await admin.from("profiles")
-      .select("is_platform_admin,active").eq("id", callerData.user.id).single();
-    const { data: callerMembership } = await admin.from("memberships")
-      .select("role,active").eq("organization_id", organizationId)
-      .eq("user_id", callerData.user.id).maybeSingle();
-    const authorized = callerProfile?.active &&
-      (callerProfile.is_platform_admin || (callerMembership?.active && callerMembership.role === "admin"));
-    if (!authorized) return json({ error: "No tenés permisos para invitar usuarios." }, 403);
 
     if (teamId) {
       const { data: validTeam } = await admin.from("teams").select("id")
@@ -84,7 +89,7 @@ Deno.serve(async (request) => {
 
     return json({
       ok: true, invited, user_id: user.id,
-      message: invited ? "Invitación enviada correctamente." : "Usuario existente agregado al equipo.",
+      status: invited ? "invited" : "existing",
     });
   } catch {
     return json({ error: "No se pudo procesar la invitación." }, 500);
@@ -94,6 +99,6 @@ Deno.serve(async (request) => {
 function json(payload: Record<string, unknown>, status = 200) {
   return new Response(JSON.stringify(payload), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
   });
 }
