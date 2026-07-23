@@ -26,6 +26,7 @@ type BudgetEntry = {
 };
 type Claim = { id:number; title:string; description:string; neighbor_name:string|null; neighbor_phone:string|null; address:string; neighborhood:string|null; category:string; priority:"baja"|"media"|"alta"|"urgente"; status:"nuevo"|"en_revision"|"asignado"|"en_proceso"|"resuelto"|"cerrado"; headquarters_id:number|null; team_id:string|null; responsible_user_id:string|null; created_at:string };
 type Project = { id:number; name:string; objective:string; status:string; priority:string; responsible_user_id:string|null; team_id:string|null; source_claim_id:number|null; start_date:string|null; due_date:string|null; estimated_budget:number };
+type Proposal = { id:number; title:string; theme:string; diagnosis:string; solution:string; beneficiaries:string|null; status:string; responsible_user_id:string|null; source_claim_id:number|null; project_id:number|null };
 
 const roleLabels: Record<Role, string> = {
   admin: "Administrador", coordinacion: "Coordinación", territorio: "Territorio",
@@ -216,6 +217,15 @@ function ManagementView({ user, organization, teams, members, headquarters, clai
   </section>;
 }
 
+function ProposalsView({user,organization,members,claims,projects,items,reload}:{user:User;organization:Organization;members:Member[];claims:Claim[];projects:Project[];items:Proposal[];reload:()=>Promise<void>}){
+  const [open,setOpen]=useState(false);const [message,setMessage]=useState("");
+  async function submit(event:FormEvent<HTMLFormElement>){event.preventDefault();const form=event.currentTarget,data=new FormData(form);const {error}=await supabase.from("proposals").insert({organization_id:organization.id,title:data.get("title"),theme:data.get("theme"),diagnosis:data.get("diagnosis"),solution:data.get("solution"),beneficiaries:data.get("beneficiaries")||null,responsible_user_id:data.get("responsible_user_id")||null,source_claim_id:data.get("source_claim_id")||null,project_id:data.get("project_id")||null,created_by:user.id});if(error)setMessage("No se pudo guardar la propuesta.");else{form.reset();setOpen(false);await reload();}}
+  async function changeStatus(id:number,status:string){const {error}=await supabase.from("proposals").update({status,updated_at:new Date().toISOString()}).eq("id",id);if(error)setMessage("No se pudo actualizar la propuesta.");else await reload();}
+  return <section><ModuleTitle kicker="AGENDA POLÍTICA" title="Propuestas" subtitle="De la escucha territorial a iniciativas claras y trazables."><button className="primary compact" onClick={()=>setOpen(!open)}>＋ Nueva propuesta</button></ModuleTitle>
+  {open&&<form className="entry-form panel" onSubmit={submit}><div className="form-head"><div><p className="kicker">NUEVA INICIATIVA</p><h2>Construir propuesta</h2></div><button type="button" onClick={()=>setOpen(false)}>×</button></div><div className="form-grid"><label className="wide">Título<input name="title" required/></label><label>Tema<select name="theme"><option>Seguridad</option><option>Salud</option><option>Educación</option><option>Empleo</option><option>Infraestructura</option><option>Ambiente</option><option>Otro</option></select></label><label>Beneficiarios<input name="beneficiaries" placeholder="Barrio, sector o población"/></label><label className="wide">Diagnóstico<textarea name="diagnosis" required placeholder="¿Cuál es el problema?"/></label><label className="wide">Solución propuesta<textarea name="solution" required placeholder="¿Qué se propone hacer?"/></label><label>Responsable<select name="responsible_user_id"><option value="">Sin asignar</option>{members.filter(m=>m.active).map(m=><option key={m.user_id} value={m.user_id}>{m.profiles?.full_name}</option>)}</select></label><label>Reclamo origen<select name="source_claim_id"><option value="">Sin reclamo</option>{claims.map(c=><option key={c.id} value={c.id}>#{c.id} {c.title}</option>)}</select></label><label>Proyecto relacionado<select name="project_id"><option value="">Sin proyecto</option>{projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label></div><div className="form-actions"><button type="button" onClick={()=>setOpen(false)}>Cancelar</button><button className="primary compact">Guardar propuesta</button></div></form>}
+  <article className="panel"><PanelHead kicker="BANCO DE PROPUESTAS" title="Iniciativas del espacio" aside={`${items.length} propuestas`}/>{items.length===0?<Empty title="Todavía no hay propuestas" text="Creá la primera iniciativa a partir de un problema territorial."/>:<div className="proposal-list">{items.map(p=><div key={p.id}><span>◆</span><div><strong>{p.title}</strong><small>{p.theme} · {p.beneficiaries||"Alcance a definir"}</small></div><select value={p.status} onChange={e=>changeStatus(p.id,e.target.value)}><option value="borrador">Borrador</option><option value="en_revision">En revisión</option><option value="aprobada">Aprobada</option><option value="publicada">Publicada</option><option value="archivada">Archivada</option></select></div>)}</div>}</article>{message&&<button className="toast" onClick={()=>setMessage("")}>{message}<span>×</span></button>}</section>;
+}
+
 function AdminView({ profile, organization, organizations, teams, members, reloadAll, selectOrganization }: {
   profile: Profile; organization: Organization; organizations: Organization[]; teams: Team[]; members: Member[];
   reloadAll: () => Promise<void>; selectOrganization: (id: string) => void;
@@ -403,6 +413,7 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
   const [entries, setEntries] = useState<BudgetEntry[]>([]);
   const [claims, setClaims] = useState<Claim[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [proposals, setProposals] = useState<Proposal[]>([]);
   const [notice, setNotice] = useState("");
   const organization = organizations.find((org) => org.id === organizationId) ?? organizations[0];
   const membership = members.find((member) => member.user_id === profile.id);
@@ -417,13 +428,14 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
   }, []);
   const loadContext = useCallback(async () => {
     if (!organizationId) return;
-    const [teamResult, memberResult, sedeResult, budgetResult, claimResult, projectResult] = await Promise.all([
+    const [teamResult, memberResult, sedeResult, budgetResult, claimResult, projectResult, proposalResult] = await Promise.all([
       supabase.from("teams").select("*").eq("organization_id", organizationId).eq("active", true).order("name"),
       supabase.from("memberships").select("organization_id,user_id,team_id,role,active,profiles(id,full_name,active)").eq("organization_id", organizationId),
       supabase.from("headquarters").select("id,name,address,circuit,phone,team_id,responsible_user_id,active").eq("organization_id", organizationId).eq("active", true).order("name"),
       supabase.from("budget_entries").select("id,kind,category,description,amount,occurred_on,status,payment_method").eq("organization_id", organizationId).order("occurred_on", { ascending: false }).limit(100),
       supabase.from("claims").select("*").eq("organization_id",organizationId).order("created_at",{ascending:false}).limit(200),
       supabase.from("projects").select("*").eq("organization_id",organizationId).order("created_at",{ascending:false}).limit(200),
+      supabase.from("proposals").select("*").eq("organization_id",organizationId).order("created_at",{ascending:false}).limit(200),
     ]);
     setTeams((teamResult.data ?? []) as Team[]);
     setMembers((memberResult.data ?? []) as unknown as Member[]);
@@ -431,6 +443,7 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
     setEntries(budgetResult.error ? [] : (budgetResult.data ?? []) as BudgetEntry[]);
     setClaims(claimResult.error?[]:(claimResult.data??[]) as Claim[]);
     setProjects(projectResult.error?[]:(projectResult.data??[]) as Project[]);
+    setProposals(proposalResult.error?[]:(proposalResult.data??[]) as Proposal[]);
   }, [organizationId]);
   useEffect(() => { void loadOrganizations(); }, [loadOrganizations]);
   useEffect(() => { void loadContext(); }, [loadContext]);
@@ -440,6 +453,7 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
     { id: "inicio", label: "Inicio", icon: "⌂" }, { id: "votantes", label: "Votantes", icon: "◎" },
     { id: "sedes", label: "Sedes", icon: "◇" }, { id: "presupuesto", label: "Presupuesto", icon: "$" },
     { id: "gestion", label: "Gestión", icon: "!" },
+    { id: "propuestas", label: "Propuestas", icon: "◆" },
     ...(canAdmin ? [{ id: "admin", label: "Administración", icon: "⚙" }] : []),
   ];
   function go(id: string) {
@@ -461,6 +475,7 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
       {active === "sedes" && <HeadquartersView organization={organization} teams={teams} members={members} items={headquarters} reload={loadContext} />}
       {active === "presupuesto" && <Budget user={session.user} organization={organization} entries={entries} reload={loadContext} />}
       {active === "gestion" && <ManagementView user={session.user} organization={organization} teams={teams} members={members} headquarters={headquarters} claims={claims} projects={projects} reload={loadContext} />}
+      {active === "propuestas" && <ProposalsView user={session.user} organization={organization} members={members} claims={claims} projects={projects} items={proposals} reload={loadContext}/>}
       {active === "admin" && <AdminView profile={profile} organization={organization} organizations={organizations} teams={teams} members={members} reloadAll={reloadAll} selectOrganization={setOrganizationId} />}
     </div>
     <nav className="bottom-nav" aria-label="Navegación principal">{modules.map((item) => <button className={active === item.id ? "active" : ""} onClick={() => go(item.id)} key={item.id}><span>{item.icon}</span>{item.label}</button>)}</nav>
