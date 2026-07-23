@@ -192,6 +192,34 @@ function VotersView() {
   </section>;
 }
 
+function ManagementView() {
+  return <section>
+    <ModuleTitle kicker="GESTIÓN Y TRAZABILIDAD" title="Proyectos y reclamos" subtitle="Una bandeja única para transformar necesidades vecinales en acciones concretas." />
+    <div className="management-cards">
+      <article className="panel management-card project-card">
+        <span className="management-icon">✓</span>
+        <div><p className="kicker">PROYECTOS</p><h2>Iniciativas del equipo</h2><p>Objetivo, responsable, presupuesto, fechas, avances y documentación.</p></div>
+        <button disabled>＋ Nuevo proyecto</button>
+      </article>
+      <article className="panel management-card claim-card">
+        <span className="management-icon">!</span>
+        <div><p className="kicker">RECLAMOS VECINALES</p><h2>Escucha y respuesta</h2><p>Ingreso por vecino, barrio o sede, con prioridad y seguimiento hasta su resolución.</p></div>
+        <button disabled>＋ Nuevo reclamo</button>
+      </article>
+    </div>
+    <article className="panel workflow-panel">
+      <PanelHead kicker="FLUJO PROPUESTO" title="Cómo funcionará" aside="Próxima etapa" />
+      <div className="workflow-steps">
+        <div><b>1</b><strong>Registrar</strong><span>Pedido, ubicación, contacto y evidencia.</span></div>
+        <div><b>2</b><strong>Clasificar</strong><span>Tema, urgencia, sede y zona.</span></div>
+        <div><b>3</b><strong>Asignar</strong><span>Equipo y persona responsable.</span></div>
+        <div><b>4</b><strong>Resolver</strong><span>Avances, respuesta y cierre verificable.</span></div>
+      </div>
+      <div className="info-banner">Los reclamos podrán convertirse en proyectos. Así se conservará toda la historia desde el pedido del vecino hasta la solución.</div>
+    </article>
+  </section>;
+}
+
 function AdminView({ profile, organization, organizations, teams, members, reloadAll, selectOrganization }: {
   profile: Profile; organization: Organization; organizations: Organization[]; teams: Team[]; members: Member[];
   reloadAll: () => Promise<void>; selectOrganization: (id: string) => void;
@@ -264,8 +292,9 @@ function AdminView({ profile, organization, organizations, teams, members, reloa
   </section>;
 }
 
-function HomeDashboard({ organization, teams, members, headquarters, entries, go }: {
-  organization: Organization; teams: Team[]; members: Member[]; headquarters: Headquarters[]; entries: BudgetEntry[]; go: (id: string) => void;
+function HomeDashboard({ organization, organizations, canAdmin, selectOrganization, teams, members, headquarters, entries, go }: {
+  organization: Organization; organizations: Organization[]; canAdmin: boolean; selectOrganization: (id: string) => void;
+  teams: Team[]; members: Member[]; headquarters: Headquarters[]; entries: BudgetEntry[]; go: (id: string) => void;
 }) {
   const totals = entries.reduce((acc, item) => { if (item.status !== "cancelado") acc[item.kind] += Number(item.amount); return acc; }, { ingreso: 0, gasto: 0, compromiso: 0 });
   const target = new Date();
@@ -273,9 +302,10 @@ function HomeDashboard({ organization, teams, members, headquarters, entries, go
   const days = Math.max(0, Math.ceil((new Date(year, 4, 9).getTime() - target.getTime()) / 86400000));
   return <>
     <section className="hero-row"><div><p className="kicker">CENTRO DE OPERACIONES</p><h1>{organization.candidate_name}</h1><span>{organization.name} · {organization.position_sought}</span></div><div className="countdown"><span>CUENTA REGRESIVA</span><strong>{days}</strong><b>DÍAS</b><small>HASTA EL 9 DE MAYO</small></div></section>
+    {canAdmin && organizations.length > 1 && <div className="home-organization-switch"><label htmlFor="home-organization">Espacio político activo</label><select id="home-organization" value={organization.id} onChange={(e) => selectOrganization(e.target.value)}>{organizations.map((org) => <option value={org.id} key={org.id}>{org.name}</option>)}</select></div>}
     <section className="stats-grid">
-      <article className="stat-card blue"><div className="card-icon">◎</div><p>ORGANIZACIÓN</p><strong>{teams.length}</strong><span>equipos configurados</span><small>{members.length} personas asignadas</small></article>
-      <article className="stat-card green"><div className="card-icon">⌂</div><p>TERRITORIO</p><strong>{headquarters.length}</strong><span>sedes activas</span><small>Vinculadas a equipos y responsables</small></article>
+      <article className="stat-card blue"><div className="stat-heading"><div className="card-icon">◎</div><h2>Organización: tu equipo</h2></div><p>EQUIPOS</p><strong>{teams.length}</strong><span>{teams.length === 1 ? "equipo configurado" : "equipos configurados"}</span><small>{members.length} {members.length === 1 ? "persona asignada" : "personas asignadas"}</small><button onClick={() => go("admin")}>Ver miembros</button></article>
+      <article className="stat-card green"><div className="stat-heading"><div className="card-icon">⌂</div><h2>Territorio: tus sedes</h2></div><p>SEDES ACTIVAS</p><strong>{headquarters.length}</strong><span>Vinculadas a equipos y responsables</span><small>Cobertura territorial organizada</small><button onClick={() => go("sedes")}>＋ Añadir primera sede</button></article>
       <article className="stat-card amber"><div className="card-icon">$</div><p>RECURSOS</p><strong>{money.format(totals.ingreso - totals.gasto - totals.compromiso)}</strong><span>saldo proyectado</span><small>{entries.length} movimientos registrados</small></article>
     </section>
     <section className="content-grid">
@@ -286,7 +316,7 @@ function HomeDashboard({ organization, teams, members, headquarters, entries, go
       <button onClick={() => go("admin")}><span>⚙</span><b>Configurar equipos</b><small>Personas, roles y espacios</small></button>
       <button onClick={() => go("sedes")}><span>⌂</span><b>Crear sede</b><small>Asignar equipo y responsable</small></button>
       <button onClick={() => go("presupuesto")}><span>$</span><b>Registrar movimiento</b><small>Ingreso, gasto o compromiso</small></button>
-      <button onClick={() => go("votantes")}><span>◎</span><b>Preparar padrón</b><small>Ver plan de importación</small></button>
+      <button onClick={() => go("gestion")}><span>!</span><b>Gestionar reclamos</b><small>Proyectos y necesidades vecinales</small></button>
     </div></section>
   </>;
 }
@@ -340,6 +370,7 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
   const modules = [
     { id: "inicio", label: "Inicio", icon: "⌂" }, { id: "votantes", label: "Votantes", icon: "◎" },
     { id: "sedes", label: "Sedes", icon: "◇" }, { id: "presupuesto", label: "Presupuesto", icon: "$" },
+    { id: "gestion", label: "Gestión", icon: "!" },
     ...(canAdmin ? [{ id: "admin", label: "Administración", icon: "⚙" }] : []),
   ];
   function go(id: string) {
@@ -353,14 +384,14 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
   return <main className="app-shell">
     <header className="topbar">
       <Logo compact />
-      <div className="organization-switch"><span>ESPACIO ACTIVO</span><select value={organization.id} onChange={(e) => setOrganizationId(e.target.value)}>{organizations.map((org) => <option value={org.id} key={org.id}>{org.name}</option>)}</select></div>
       <button className="profile" onClick={() => void supabase.auth.signOut()} title="Cerrar sesión"><span>{initials}</span><b>{profile.full_name}</b><em>{roleLabels[orgRole]}</em><small>Salir</small></button>
     </header>
     <div className="page">
-      {active === "inicio" && <HomeDashboard organization={organization} teams={teams} members={members} headquarters={headquarters} entries={entries} go={go} />}
+      {active === "inicio" && <HomeDashboard organization={organization} organizations={organizations} canAdmin={canAdmin} selectOrganization={setOrganizationId} teams={teams} members={members} headquarters={headquarters} entries={entries} go={go} />}
       {active === "votantes" && <VotersView />}
       {active === "sedes" && <HeadquartersView organization={organization} teams={teams} members={members} items={headquarters} reload={loadContext} />}
       {active === "presupuesto" && <Budget user={session.user} organization={organization} entries={entries} reload={loadContext} />}
+      {active === "gestion" && <ManagementView />}
       {active === "admin" && <AdminView profile={profile} organization={organization} organizations={organizations} teams={teams} members={members} reloadAll={reloadAll} selectOrganization={setOrganizationId} />}
     </div>
     <nav className="bottom-nav" aria-label="Navegación principal">{modules.map((item) => <button className={active === item.id ? "active" : ""} onClick={() => go(item.id)} key={item.id}><span>{item.icon}</span>{item.label}</button>)}</nav>
