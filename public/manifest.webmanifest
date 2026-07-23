@@ -1,0 +1,22 @@
+{
+  "id": "/",
+  "name": "Rumbo al 9 de Mayo",
+  "short_name": "Rumbo al 9",
+  "description": "Plataforma de organización política, territorial y electoral.",
+  "lang": "es-AR",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f5f5f1",
+  "theme_color": "#2d2d49",
+  "categories": ["productivity", "business"],
+  "icons": [
+    {
+      "src": "/rumbo-logo.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

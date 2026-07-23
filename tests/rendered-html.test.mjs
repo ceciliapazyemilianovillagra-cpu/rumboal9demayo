@@ -20,6 +20,7 @@ test("renders the branded application shell", async () => {
   const html = await response.text();
   assert.match(html, /<title>Rumbo al 9 de Mayo<\/title>/i);
   assert.match(html, /rumbo-logo\.png/);
+  assert.match(html, /manifest\.webmanifest/);
   assert.match(html, /Preparando tu espacio de trabajo/);
   assert.match(html, /lang="es"/);
 });

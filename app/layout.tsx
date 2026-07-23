@@ -8,6 +8,18 @@ const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"]
 export const metadata: Metadata = {
   title: "Rumbo al 9 de Mayo",
   description: "Centro de operaciones para la organización territorial y electoral.",
+  applicationName: "Rumbo al 9 de Mayo",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Rumbo al 9",
+  },
+  icons: {
+    icon: [{ url: "/rumbo-logo.png", type: "image/png" }],
+    shortcut: [{ url: "/rumbo-logo.png", type: "image/png" }],
+    apple: [{ url: "/rumbo-logo.png", type: "image/png" }],
+  },
   openGraph: {
     title: "Rumbo al 9 de Mayo",
     description: "Organización, territorio y resultados.",
