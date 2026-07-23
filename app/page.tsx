@@ -27,6 +27,7 @@ type BudgetEntry = {
 type Claim = { id:number; title:string; description:string; neighbor_name:string|null; neighbor_phone:string|null; address:string; neighborhood:string|null; category:string; priority:"baja"|"media"|"alta"|"urgente"; status:"nuevo"|"en_revision"|"asignado"|"en_proceso"|"resuelto"|"cerrado"; headquarters_id:number|null; team_id:string|null; responsible_user_id:string|null; created_at:string };
 type Project = { id:number; name:string; objective:string; status:string; priority:string; responsible_user_id:string|null; team_id:string|null; source_claim_id:number|null; start_date:string|null; due_date:string|null; estimated_budget:number };
 type Proposal = { id:number; title:string; theme:string; diagnosis:string; solution:string; beneficiaries:string|null; status:string; responsible_user_id:string|null; source_claim_id:number|null; project_id:number|null };
+type Activity = { id:number; title:string; activity_type:string; description:string|null; starts_at:string; ends_at:string|null; location:string|null; headquarters_id:number|null; team_id:string|null; responsible_user_id:string|null; status:string };
 
 const roleLabels: Record<Role, string> = {
   admin: "Administrador", coordinacion: "Coordinación", territorio: "Territorio",
@@ -365,9 +366,9 @@ function AdminView({ profile, organization, organizations, teams, members, reloa
   </section>;
 }
 
-function HomeDashboard({ organization, organizations, canAdmin, selectOrganization, teams, members, headquarters, entries, go }: {
+function HomeDashboard({ organization, organizations, canAdmin, selectOrganization, teams, members, headquarters, entries, claims, projects, activities, go }: {
   organization: Organization; organizations: Organization[]; canAdmin: boolean; selectOrganization: (id: string) => void;
-  teams: Team[]; members: Member[]; headquarters: Headquarters[]; entries: BudgetEntry[]; go: (id: string) => void;
+  teams: Team[]; members: Member[]; headquarters: Headquarters[]; entries: BudgetEntry[]; claims:Claim[]; projects:Project[]; activities:Activity[]; go: (id: string) => void;
 }) {
   const totals = entries.reduce((acc, item) => { if (item.status !== "cancelado") acc[item.kind] += Number(item.amount); return acc; }, { ingreso: 0, gasto: 0, compromiso: 0 });
   const target = new Date();
@@ -383,8 +384,9 @@ function HomeDashboard({ organization, organizations, canAdmin, selectOrganizati
     </section>
     <section className="content-grid">
       <article className="panel territory"><PanelHead kicker="ESTRUCTURA DE CAMPAÑA" title="Equipos activos" aside={`${teams.length} equipos`} />{teams.length ? <div className="team-overview">{teams.slice(0, 4).map((team) => <div key={team.id}><span>{team.name.slice(0, 1)}</span><div><strong>{team.name}</strong><small>{members.filter((m) => m.team_id === team.id).length} integrantes</small></div></div>)}</div> : <Empty title="Sin equipos" text="Creá el primero desde Administración." />}</article>
-      <article className="panel agenda"><PanelHead kicker="SIGUIENTES PASOS" title="Ruta de implementación" /><div className="task"><i className="green" /><div><strong>Base multi-equipo</strong><span>Usuarios, organizaciones y permisos</span></div><em>Lista</em></div><div className="task"><i className="amber" /><div><strong>Completar sedes</strong><span>Responsables y cobertura territorial</span></div><em>En curso</em></div><div className="task"><i className="blue" /><div><strong>Esperar padrón</strong><span>Importación masiva de votantes</span></div><em>Planificado</em></div></article>
+      <article className="panel agenda"><PanelHead kicker="PRÓXIMAS ACTIVIDADES" title="Agenda del equipo" aside={<button className="text-button" onClick={()=>go("agenda")}>Ver agenda</button>} />{activities.filter(a=>new Date(a.starts_at)>=new Date()).slice(0,4).map(a=><div className="task" key={a.id}><i className="blue"/><div><strong>{a.title}</strong><span>{new Date(a.starts_at).toLocaleString("es-AR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})} · {a.location||"Lugar a definir"}</span></div><em>{a.status}</em></div>)}{activities.filter(a=>new Date(a.starts_at)>=new Date()).length===0&&<Empty title="Agenda libre" text="Cargá reuniones, recorridas y eventos desde Agenda."/>}</article>
     </section>
+    <section className="dashboard-operations"><article className="panel"><PanelHead kicker="CALENDARIO" title={new Date().toLocaleDateString("es-AR",{month:"long",year:"numeric"})}/><MonthCalendar activities={activities}/></article><article className="panel"><PanelHead kicker="GESTIÓN TERRITORIAL" title="Situación actual"/><div className="operation-numbers"><div><b>{claims.filter(c=>!["resuelto","cerrado"].includes(c.status)).length}</b><span>reclamos pendientes</span></div><div><b>{claims.filter(c=>c.priority==="urgente").length}</b><span>casos urgentes</span></div><div><b>{projects.filter(p=>!["completado","cancelado"].includes(p.status)).length}</b><span>proyectos activos</span></div><div><b>{activities.filter(a=>new Date(a.starts_at)>=new Date()).length}</b><span>actividades próximas</span></div></div></article></section>
     <section className="quick-section"><div><p className="kicker">ACCESOS RÁPIDOS</p><h2>¿Qué necesitás hacer?</h2></div><div className="quick-grid">
       <button onClick={() => go("admin")}><span>⚙</span><b>Configurar equipos</b><small>Personas, roles y espacios</small></button>
       <button onClick={() => go("sedes")}><span>⌂</span><b>Crear sede</b><small>Asignar equipo y responsable</small></button>
@@ -392,6 +394,18 @@ function HomeDashboard({ organization, organizations, canAdmin, selectOrganizati
       <button onClick={() => go("gestion")}><span>!</span><b>Gestionar reclamos</b><small>Proyectos y necesidades vecinales</small></button>
     </div></section>
   </>;
+}
+
+function MonthCalendar({activities}:{activities:Activity[]}){
+  const now=new Date(),first=new Date(now.getFullYear(),now.getMonth(),1),days=new Date(now.getFullYear(),now.getMonth()+1,0).getDate(),offset=(first.getDay()+6)%7;
+  return <div className="month-calendar"><div className="calendar-week">{["L","M","X","J","V","S","D"].map(d=><b key={d}>{d}</b>)}</div><div className="calendar-days">{Array.from({length:offset},(_,i)=><span key={`e${i}`}/>) }{Array.from({length:days},(_,i)=>{const day=i+1,has=activities.some(a=>{const d=new Date(a.starts_at);return d.getFullYear()===now.getFullYear()&&d.getMonth()===now.getMonth()&&d.getDate()===day});return <span className={`${day===now.getDate()?"today":""} ${has?"has-event":""}`} key={day}>{day}</span>})}</div></div>;
+}
+
+function AgendaView({user,organization,teams,members,headquarters,items,reload}:{user:User;organization:Organization;teams:Team[];members:Member[];headquarters:Headquarters[];items:Activity[];reload:()=>Promise<void>}){
+ const [open,setOpen]=useState(false),[message,setMessage]=useState("");
+ async function submit(event:FormEvent<HTMLFormElement>){event.preventDefault();const form=event.currentTarget,data=new FormData(form);const {error}=await supabase.from("activities").insert({organization_id:organization.id,title:data.get("title"),activity_type:data.get("activity_type"),description:data.get("description")||null,starts_at:data.get("starts_at"),ends_at:data.get("ends_at")||null,location:data.get("location")||null,headquarters_id:data.get("headquarters_id")||null,team_id:data.get("team_id")||null,responsible_user_id:data.get("responsible_user_id")||null,created_by:user.id});if(error)setMessage("No se pudo guardar la actividad.");else{form.reset();setOpen(false);await reload();}}
+ async function status(id:number,value:string){const {error}=await supabase.from("activities").update({status:value,updated_at:new Date().toISOString()}).eq("id",id);if(error)setMessage("No se pudo actualizar la actividad.");else await reload();}
+ return <section><ModuleTitle kicker="ORGANIZACIÓN DIARIA" title="Agenda y actividades" subtitle="Reuniones, recorridas, eventos y tareas territoriales."><button className="primary compact" onClick={()=>setOpen(!open)}>＋ Nueva actividad</button></ModuleTitle>{open&&<form className="entry-form panel" onSubmit={submit}><div className="form-grid"><label className="wide">Título<input name="title" required/></label><label>Tipo<select name="activity_type"><option value="reunion">Reunión</option><option value="recorrida">Recorrida</option><option value="evento">Evento</option><option value="capacitacion">Capacitación</option><option value="tarea">Tarea</option></select></label><label>Lugar<input name="location"/></label><label>Inicio<input type="datetime-local" name="starts_at" required/></label><label>Fin<input type="datetime-local" name="ends_at"/></label><label>Sede<select name="headquarters_id"><option value="">Sin sede</option>{headquarters.map(h=><option key={h.id} value={h.id}>{h.name}</option>)}</select></label><label>Equipo<select name="team_id"><option value="">Todos</option>{teams.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></label><label>Responsable<select name="responsible_user_id"><option value="">Sin asignar</option>{members.filter(m=>m.active).map(m=><option key={m.user_id} value={m.user_id}>{m.profiles?.full_name}</option>)}</select></label><label className="wide">Descripción<textarea name="description"/></label></div><div className="form-actions"><button type="button" onClick={()=>setOpen(false)}>Cancelar</button><button className="primary compact">Guardar actividad</button></div></form>}<div className="agenda-layout"><article className="panel"><PanelHead kicker="CALENDARIO MENSUAL" title={new Date().toLocaleDateString("es-AR",{month:"long",year:"numeric"})}/><MonthCalendar activities={items}/></article><article className="panel"><PanelHead kicker="CRONOGRAMA" title="Actividades" aside={`${items.length} registros`}/>{items.length===0?<Empty title="Sin actividades" text="Agregá la primera reunión o recorrida."/>:<div className="activity-list">{items.map(a=><div key={a.id}><time>{new Date(a.starts_at).toLocaleDateString("es-AR",{day:"2-digit",month:"short"})}</time><div><strong>{a.title}</strong><small>{new Date(a.starts_at).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"})} · {a.location||"Sin lugar"}</small></div><select value={a.status} onChange={e=>status(a.id,e.target.value)}><option value="programada">Programada</option><option value="confirmada">Confirmada</option><option value="realizada">Realizada</option><option value="cancelada">Cancelada</option></select></div>)}</div>}</article></div>{message&&<button className="toast" onClick={()=>setMessage("")}>{message}<span>×</span></button>}</section>;
 }
 
 function ModuleTitle({ kicker, title, subtitle, children }: { kicker: string; title: string; subtitle: string; children?: React.ReactNode }) {
@@ -414,6 +428,7 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
   const [claims, setClaims] = useState<Claim[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [proposals, setProposals] = useState<Proposal[]>([]);
+  const [activities, setActivities] = useState<Activity[]>([]);
   const [notice, setNotice] = useState("");
   const organization = organizations.find((org) => org.id === organizationId) ?? organizations[0];
   const membership = members.find((member) => member.user_id === profile.id);
@@ -428,7 +443,7 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
   }, []);
   const loadContext = useCallback(async () => {
     if (!organizationId) return;
-    const [teamResult, memberResult, sedeResult, budgetResult, claimResult, projectResult, proposalResult] = await Promise.all([
+    const [teamResult, memberResult, sedeResult, budgetResult, claimResult, projectResult, proposalResult, activityResult] = await Promise.all([
       supabase.from("teams").select("*").eq("organization_id", organizationId).eq("active", true).order("name"),
       supabase.from("memberships").select("organization_id,user_id,team_id,role,active,profiles(id,full_name,active)").eq("organization_id", organizationId),
       supabase.from("headquarters").select("id,name,address,circuit,phone,team_id,responsible_user_id,active").eq("organization_id", organizationId).eq("active", true).order("name"),
@@ -436,6 +451,7 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
       supabase.from("claims").select("*").eq("organization_id",organizationId).order("created_at",{ascending:false}).limit(200),
       supabase.from("projects").select("*").eq("organization_id",organizationId).order("created_at",{ascending:false}).limit(200),
       supabase.from("proposals").select("*").eq("organization_id",organizationId).order("created_at",{ascending:false}).limit(200),
+      supabase.from("activities").select("*").eq("organization_id",organizationId).order("starts_at",{ascending:true}).limit(300),
     ]);
     setTeams((teamResult.data ?? []) as Team[]);
     setMembers((memberResult.data ?? []) as unknown as Member[]);
@@ -444,6 +460,7 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
     setClaims(claimResult.error?[]:(claimResult.data??[]) as Claim[]);
     setProjects(projectResult.error?[]:(projectResult.data??[]) as Project[]);
     setProposals(proposalResult.error?[]:(proposalResult.data??[]) as Proposal[]);
+    setActivities(activityResult.error?[]:(activityResult.data??[]) as Activity[]);
   }, [organizationId]);
   useEffect(() => { void loadOrganizations(); }, [loadOrganizations]);
   useEffect(() => { void loadContext(); }, [loadContext]);
@@ -453,6 +470,7 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
     { id: "inicio", label: "Inicio", icon: "⌂" }, { id: "votantes", label: "Votantes", icon: "◎" },
     { id: "sedes", label: "Sedes", icon: "◇" }, { id: "presupuesto", label: "Presupuesto", icon: "$" },
     { id: "gestion", label: "Gestión", icon: "!" },
+    { id: "agenda", label: "Agenda", icon: "▣" },
     { id: "propuestas", label: "Propuestas", icon: "◆" },
     ...(canAdmin ? [{ id: "admin", label: "Administración", icon: "⚙" }] : []),
   ];
@@ -470,12 +488,13 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
       <button className="profile" onClick={() => void supabase.auth.signOut()} title="Cerrar sesión"><span>{initials}</span><b>{profile.full_name}</b><em>{roleLabels[orgRole]}</em><small>Salir</small></button>
     </header>
     <div className="page">
-      {active === "inicio" && <HomeDashboard organization={organization} organizations={organizations} canAdmin={canAdmin} selectOrganization={setOrganizationId} teams={teams} members={members} headquarters={headquarters} entries={entries} go={go} />}
+      {active === "inicio" && <HomeDashboard organization={organization} organizations={organizations} canAdmin={canAdmin} selectOrganization={setOrganizationId} teams={teams} members={members} headquarters={headquarters} entries={entries} claims={claims} projects={projects} activities={activities} go={go} />}
       {active === "votantes" && <VotersView />}
       {active === "sedes" && <HeadquartersView organization={organization} teams={teams} members={members} items={headquarters} reload={loadContext} />}
       {active === "presupuesto" && <Budget user={session.user} organization={organization} entries={entries} reload={loadContext} />}
       {active === "gestion" && <ManagementView user={session.user} organization={organization} teams={teams} members={members} headquarters={headquarters} claims={claims} projects={projects} reload={loadContext} />}
       {active === "propuestas" && <ProposalsView user={session.user} organization={organization} members={members} claims={claims} projects={projects} items={proposals} reload={loadContext}/>}
+      {active === "agenda" && <AgendaView user={session.user} organization={organization} teams={teams} members={members} headquarters={headquarters} items={activities} reload={loadContext}/>}
       {active === "admin" && <AdminView profile={profile} organization={organization} organizations={organizations} teams={teams} members={members} reloadAll={reloadAll} selectOrganization={setOrganizationId} />}
     </div>
     <nav className="bottom-nav" aria-label="Navegación principal">{modules.map((item) => <button className={active === item.id ? "active" : ""} onClick={() => go(item.id)} key={item.id}><span>{item.icon}</span>{item.label}</button>)}</nav>
