@@ -226,6 +226,8 @@ function AdminView({ profile, organization, organizations, teams, members, reloa
 }) {
   const [teamOpen, setTeamOpen] = useState(false);
   const [orgOpen, setOrgOpen] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviting, setInviting] = useState(false);
   const [message, setMessage] = useState("");
 
   async function createTeam(event: FormEvent<HTMLFormElement>) {
@@ -238,6 +240,38 @@ function AdminView({ profile, organization, organizations, teams, members, reloa
   async function updateMember(userId: string, field: "team_id" | "role", value: string) {
     const { error } = await supabase.from("memberships").update({ [field]: value || null }).eq("organization_id", organization.id).eq("user_id", userId);
     if (error) setMessage("No se pudo actualizar el usuario.");
+    else await reloadAll();
+  }
+
+  async function inviteMember(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    setInviting(true); setMessage("");
+    const { data: result, error } = await supabase.functions.invoke("invite-team-member", {
+      body: {
+        organization_id: organization.id,
+        full_name: data.get("full_name"),
+        email: data.get("email"),
+        team_id: data.get("team_id") || null,
+        role: data.get("role"),
+      },
+    });
+    if (error || result?.error) setMessage(result?.error || "No se pudo enviar la invitación.");
+    else {
+      setMessage(result.message);
+      form.reset();
+      setInviteOpen(false);
+      await reloadAll();
+    }
+    setInviting(false);
+  }
+
+  async function toggleMember(member: Member) {
+    if (member.user_id === profile.id) return setMessage("No podés desactivar tu propio acceso.");
+    const { error } = await supabase.from("memberships").update({ active: !member.active })
+      .eq("organization_id", organization.id).eq("user_id", member.user_id);
+    if (error) setMessage("No se pudo cambiar el estado del usuario.");
     else await reloadAll();
   }
 
@@ -278,14 +312,20 @@ function AdminView({ profile, organization, organizations, teams, members, reloa
         <div className="team-list">{teams.map((team) => <div key={team.id}><span>{team.name.slice(0, 2).toUpperCase()}</span><div><strong>{team.name}</strong><small>{team.description || "Sin descripción"}</small></div><em>{members.filter((m) => m.team_id === team.id).length} personas</em></div>)}</div>
       </article>
       <article className="panel admin-section">
-        <PanelHead kicker="PERSONAS Y PERMISOS" title="Usuarios" aside={`${members.length} activos`} />
-        <div className="member-list">{members.map((member) => <div key={member.user_id}>
+        <PanelHead kicker="PERSONAS Y PERMISOS" title="Usuarios" aside={<button className="text-button" onClick={() => setInviteOpen(!inviteOpen)}>＋ Invitar usuario</button>} />
+        {inviteOpen && <form className="invite-form" onSubmit={inviteMember}>
+          <div><label>Nombre completo<input name="full_name" required placeholder="Ana Páez" /></label><label>Correo electrónico<input name="email" required type="email" placeholder="ana@correo.com" /></label></div>
+          <div><label>Equipo<select name="team_id"><option value="">Sin equipo</option>{teams.map((team) => <option value={team.id} key={team.id}>{team.name}</option>)}</select></label><label>Rol<select name="role" defaultValue="territorio">{Object.entries(roleLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label></div>
+          <div className="invite-actions"><button type="button" onClick={() => setInviteOpen(false)}>Cancelar</button><button className="primary compact" disabled={inviting}>{inviting ? "Enviando..." : "Enviar invitación"}</button></div>
+        </form>}
+        <div className="member-list">{members.map((member) => <div className={!member.active ? "member-disabled" : ""} key={member.user_id}>
           <span className="avatar">{(member.profiles?.full_name ?? "U").split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase()}</span>
-          <div><strong>{member.profiles?.full_name}</strong><small>Usuario habilitado</small></div>
-          <select aria-label="Equipo" value={member.team_id ?? ""} onChange={(e) => updateMember(member.user_id, "team_id", e.target.value)}><option value="">Sin equipo</option>{teams.map((t) => <option value={t.id} key={t.id}>{t.name}</option>)}</select>
-          <select aria-label="Rol" value={member.role} onChange={(e) => updateMember(member.user_id, "role", e.target.value)}>{Object.entries(roleLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select>
+          <div><strong>{member.profiles?.full_name}</strong><small>{member.active ? "Usuario habilitado" : "Acceso desactivado"}</small></div>
+          <select aria-label="Equipo" disabled={!member.active} value={member.team_id ?? ""} onChange={(e) => updateMember(member.user_id, "team_id", e.target.value)}><option value="">Sin equipo</option>{teams.map((t) => <option value={t.id} key={t.id}>{t.name}</option>)}</select>
+          <select aria-label="Rol" disabled={!member.active} value={member.role} onChange={(e) => updateMember(member.user_id, "role", e.target.value)}>{Object.entries(roleLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select>
+          <button className={`member-toggle ${member.active ? "deactivate" : "activate"}`} disabled={member.user_id === profile.id} onClick={() => toggleMember(member)}>{member.active ? "Desactivar" : "Activar"}</button>
         </div>)}</div>
-        <div className="info-banner compact-info">La invitación automática por correo será el próximo paso. Por ahora, las cuentas nuevas se crean de forma controlada en Supabase y aquí se asignan al equipo correspondiente.</div>
+        <div className="info-banner compact-info">Cada invitado recibirá un enlace para confirmar su cuenta y crear su contraseña. Nunca necesitás conocer su clave.</div>
       </article>
     </div>
     {message && <button className="toast" onClick={() => setMessage("")}>{message}<span>×</span></button>}
@@ -354,7 +394,7 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
     if (!organizationId) return;
     const [teamResult, memberResult, sedeResult, budgetResult] = await Promise.all([
       supabase.from("teams").select("*").eq("organization_id", organizationId).eq("active", true).order("name"),
-      supabase.from("memberships").select("organization_id,user_id,team_id,role,active,profiles(id,full_name,active)").eq("organization_id", organizationId).eq("active", true),
+      supabase.from("memberships").select("organization_id,user_id,team_id,role,active,profiles(id,full_name,active)").eq("organization_id", organizationId),
       supabase.from("headquarters").select("id,name,address,circuit,phone,team_id,responsible_user_id,active").eq("organization_id", organizationId).eq("active", true).order("name"),
       supabase.from("budget_entries").select("id,kind,category,description,amount,occurred_on,status,payment_method").eq("organization_id", organizationId).order("occurred_on", { ascending: false }).limit(100),
     ]);
