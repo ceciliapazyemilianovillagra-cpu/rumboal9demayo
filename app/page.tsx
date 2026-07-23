@@ -25,6 +25,7 @@ type BudgetEntry = {
   status: "pendiente" | "confirmado" | "cancelado"; payment_method: string | null;
 };
 type Claim = { id:number; title:string; description:string; neighbor_name:string|null; neighbor_phone:string|null; address:string; neighborhood:string|null; category:string; priority:"baja"|"media"|"alta"|"urgente"; status:"nuevo"|"en_revision"|"asignado"|"en_proceso"|"resuelto"|"cerrado"; headquarters_id:number|null; team_id:string|null; responsible_user_id:string|null; created_at:string };
+type Project = { id:number; name:string; objective:string; status:string; priority:string; responsible_user_id:string|null; team_id:string|null; source_claim_id:number|null; start_date:string|null; due_date:string|null; estimated_budget:number };
 
 const roleLabels: Record<Role, string> = {
   admin: "Administrador", coordinacion: "Coordinación", territorio: "Territorio",
@@ -193,10 +194,11 @@ function VotersView() {
   </section>;
 }
 
-function ManagementView({ user, organization, teams, members, headquarters, claims, reload }: { user:User; organization:Organization; teams:Team[]; members:Member[]; headquarters:Headquarters[]; claims:Claim[]; reload:()=>Promise<void> }) {
-  const [open,setOpen]=useState(false); const [message,setMessage]=useState("");
+function ManagementView({ user, organization, teams, members, headquarters, claims, projects, reload }: { user:User; organization:Organization; teams:Team[]; members:Member[]; headquarters:Headquarters[]; claims:Claim[]; projects:Project[]; reload:()=>Promise<void> }) {
+  const [open,setOpen]=useState(false); const [projectOpen,setProjectOpen]=useState(false); const [message,setMessage]=useState("");
   async function submit(event:FormEvent<HTMLFormElement>){event.preventDefault();const form=event.currentTarget,data=new FormData(form);const {error}=await supabase.from("claims").insert({organization_id:organization.id,title:data.get("title"),description:data.get("description"),neighbor_name:data.get("neighbor_name")||null,neighbor_phone:data.get("neighbor_phone")||null,address:data.get("address"),neighborhood:data.get("neighborhood")||null,category:data.get("category"),priority:data.get("priority"),headquarters_id:data.get("headquarters_id")||null,team_id:data.get("team_id")||null,responsible_user_id:data.get("responsible_user_id")||null,created_by:user.id});if(error)setMessage("No se pudo registrar el reclamo.");else{form.reset();setOpen(false);await reload();}}
   async function changeStatus(id:number,status:string){const {error}=await supabase.from("claims").update({status,updated_at:new Date().toISOString()}).eq("id",id);if(error)setMessage("No se pudo actualizar el estado.");else await reload();}
+  async function addProject(event:FormEvent<HTMLFormElement>){event.preventDefault();const form=event.currentTarget,data=new FormData(form);const {error}=await supabase.from("projects").insert({organization_id:organization.id,name:data.get("name"),objective:data.get("objective"),priority:data.get("priority"),team_id:data.get("team_id")||null,responsible_user_id:data.get("responsible_user_id")||null,source_claim_id:data.get("source_claim_id")||null,start_date:data.get("start_date")||null,due_date:data.get("due_date")||null,estimated_budget:Number(data.get("estimated_budget")||0),created_by:user.id});if(error)setMessage("No se pudo crear el proyecto.");else{form.reset();setProjectOpen(false);await reload();}}
   return <section>
     <ModuleTitle kicker="GESTIÓN TERRITORIAL" title="Reclamos vecinales" subtitle="Registro, asignación y seguimiento hasta su resolución."><button className="primary compact" onClick={()=>setOpen(!open)}>＋ Nuevo reclamo</button></ModuleTitle>
     <div className="claim-summary"><article><b>{claims.length}</b><span>Total</span></article><article><b>{claims.filter(c=>!["resuelto","cerrado"].includes(c.status)).length}</b><span>Pendientes</span></article><article><b>{claims.filter(c=>c.priority==="urgente").length}</b><span>Urgentes</span></article><article><b>{claims.filter(c=>c.status==="resuelto").length}</b><span>Resueltos</span></article></div>
@@ -206,6 +208,10 @@ function ManagementView({ user, organization, teams, members, headquarters, clai
       <label>Sede<select name="headquarters_id"><option value="">Sin asignar</option>{headquarters.map(h=><option key={h.id} value={h.id}>{h.name}</option>)}</select></label><label>Equipo<select name="team_id"><option value="">Sin asignar</option>{teams.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></label><label>Responsable<select name="responsible_user_id"><option value="">Sin asignar</option>{members.filter(m=>m.active).map(m=><option key={m.user_id} value={m.user_id}>{m.profiles?.full_name}</option>)}</select></label>
     </div>{message&&<p className="form-message">{message}</p>}<div className="form-actions"><button type="button" onClick={()=>setOpen(false)}>Cancelar</button><button className="primary compact">Registrar reclamo</button></div></form>}
     <article className="panel"><PanelHead kicker="BANDEJA DE SEGUIMIENTO" title="Reclamos registrados" aside={`${claims.length} casos`}/>{claims.length===0?<Empty title="Todavía no hay reclamos" text="Registrá el primer pedido vecinal para comenzar su seguimiento."/>:<div className="claim-list">{claims.map(c=><div className="claim-row" key={c.id}><span className={`priority ${c.priority}`}>!</span><div><strong>{c.title}</strong><small>{c.category} · {c.neighborhood||c.address}</small></div><em>{c.priority}</em><select value={c.status} onChange={e=>changeStatus(c.id,e.target.value)}><option value="nuevo">Nuevo</option><option value="en_revision">En revisión</option><option value="asignado">Asignado</option><option value="en_proceso">En proceso</option><option value="resuelto">Resuelto</option><option value="cerrado">Cerrado</option></select></div>)}</div>}</article>
+    <article className="panel project-panel"><PanelHead kicker="PLANIFICACIÓN" title="Proyectos" aside={<button className="text-button" onClick={()=>setProjectOpen(!projectOpen)}>＋ Nuevo proyecto</button>}/>
+      {projectOpen&&<form className="entry-form" onSubmit={addProject}><div className="form-grid"><label className="wide">Nombre<input name="name" required/></label><label className="wide">Objetivo<textarea name="objective" required/></label><label>Prioridad<select name="priority"><option>baja</option><option defaultValue="media">media</option><option>alta</option></select></label><label>Equipo<select name="team_id"><option value="">Sin asignar</option>{teams.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></label><label>Responsable<select name="responsible_user_id"><option value="">Sin asignar</option>{members.filter(m=>m.active).map(m=><option key={m.user_id} value={m.user_id}>{m.profiles?.full_name}</option>)}</select></label><label>Reclamo origen<select name="source_claim_id"><option value="">Sin reclamo</option>{claims.map(c=><option key={c.id} value={c.id}>#{c.id} {c.title}</option>)}</select></label><label>Inicio<input type="date" name="start_date"/></label><label>Vencimiento<input type="date" name="due_date"/></label><label>Presupuesto estimado<input type="number" min="0" name="estimated_budget"/></label></div><div className="form-actions"><button type="button" onClick={()=>setProjectOpen(false)}>Cancelar</button><button className="primary compact">Crear proyecto</button></div></form>}
+      {projects.length===0?<Empty title="Todavía no hay proyectos" text="Podés crear uno directamente o vincularlo con un reclamo vecinal."/>:<div className="project-list">{projects.map(p=><div key={p.id}><span>✓</span><div><strong>{p.name}</strong><small>{p.status} · {p.due_date?`vence ${new Date(`${p.due_date}T12:00:00`).toLocaleDateString("es-AR")}`:"sin vencimiento"}</small></div><b>{money.format(Number(p.estimated_budget))}</b></div>)}</div>}
+    </article>
     {message&&<button className="toast" onClick={()=>setMessage("")}>{message}<span>×</span></button>}
   </section>;
 }
@@ -396,6 +402,7 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
   const [headquarters, setHeadquarters] = useState<Headquarters[]>([]);
   const [entries, setEntries] = useState<BudgetEntry[]>([]);
   const [claims, setClaims] = useState<Claim[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [notice, setNotice] = useState("");
   const organization = organizations.find((org) => org.id === organizationId) ?? organizations[0];
   const membership = members.find((member) => member.user_id === profile.id);
@@ -410,18 +417,20 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
   }, []);
   const loadContext = useCallback(async () => {
     if (!organizationId) return;
-    const [teamResult, memberResult, sedeResult, budgetResult, claimResult] = await Promise.all([
+    const [teamResult, memberResult, sedeResult, budgetResult, claimResult, projectResult] = await Promise.all([
       supabase.from("teams").select("*").eq("organization_id", organizationId).eq("active", true).order("name"),
       supabase.from("memberships").select("organization_id,user_id,team_id,role,active,profiles(id,full_name,active)").eq("organization_id", organizationId),
       supabase.from("headquarters").select("id,name,address,circuit,phone,team_id,responsible_user_id,active").eq("organization_id", organizationId).eq("active", true).order("name"),
       supabase.from("budget_entries").select("id,kind,category,description,amount,occurred_on,status,payment_method").eq("organization_id", organizationId).order("occurred_on", { ascending: false }).limit(100),
       supabase.from("claims").select("*").eq("organization_id",organizationId).order("created_at",{ascending:false}).limit(200),
+      supabase.from("projects").select("*").eq("organization_id",organizationId).order("created_at",{ascending:false}).limit(200),
     ]);
     setTeams((teamResult.data ?? []) as Team[]);
     setMembers((memberResult.data ?? []) as unknown as Member[]);
     setHeadquarters((sedeResult.data ?? []) as Headquarters[]);
     setEntries(budgetResult.error ? [] : (budgetResult.data ?? []) as BudgetEntry[]);
     setClaims(claimResult.error?[]:(claimResult.data??[]) as Claim[]);
+    setProjects(projectResult.error?[]:(projectResult.data??[]) as Project[]);
   }, [organizationId]);
   useEffect(() => { void loadOrganizations(); }, [loadOrganizations]);
   useEffect(() => { void loadContext(); }, [loadContext]);
@@ -451,7 +460,7 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
       {active === "votantes" && <VotersView />}
       {active === "sedes" && <HeadquartersView organization={organization} teams={teams} members={members} items={headquarters} reload={loadContext} />}
       {active === "presupuesto" && <Budget user={session.user} organization={organization} entries={entries} reload={loadContext} />}
-      {active === "gestion" && <ManagementView user={session.user} organization={organization} teams={teams} members={members} headquarters={headquarters} claims={claims} reload={loadContext} />}
+      {active === "gestion" && <ManagementView user={session.user} organization={organization} teams={teams} members={members} headquarters={headquarters} claims={claims} projects={projects} reload={loadContext} />}
       {active === "admin" && <AdminView profile={profile} organization={organization} organizations={organizations} teams={teams} members={members} reloadAll={reloadAll} selectOrganization={setOrganizationId} />}
     </div>
     <nav className="bottom-nav" aria-label="Navegación principal">{modules.map((item) => <button className={active === item.id ? "active" : ""} onClick={() => go(item.id)} key={item.id}><span>{item.icon}</span>{item.label}</button>)}</nav>
@@ -471,6 +480,18 @@ export default function Home() {
     }
     return () => data.subscription.unsubscribe();
   }, []);
+  useEffect(() => {
+    if (!session) return;
+    let timer: ReturnType<typeof setTimeout>;
+    const reset = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => void supabase.auth.signOut(), 30 * 60 * 1000);
+    };
+    const events = ["pointerdown", "keydown", "touchstart"];
+    events.forEach((event) => window.addEventListener(event, reset, { passive: true }));
+    reset();
+    return () => { clearTimeout(timer); events.forEach((event) => window.removeEventListener(event, reset)); };
+  }, [session]);
   useEffect(() => {
     if (!session) return; setLoading(true);
     supabase.from("profiles").select("id,full_name,role,active,is_platform_admin").eq("id", session.user.id).single().then(({ data }) => { setProfile(data as Profile | null); setLoading(false); });
