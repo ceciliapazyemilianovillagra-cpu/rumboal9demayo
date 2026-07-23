@@ -67,7 +67,7 @@ Deno.serve(async (request) => {
     if (!user) {
       const { data: invitation, error: inviteError } = await admin.auth.admin.inviteUserByEmail(email, {
         data: { full_name: fullName },
-        redirectTo: "https://rumbo-al-9-de-mayo.ceciliapazyemilianov.chatgpt.site",
+        redirectTo: "https://rumboal9demayo.vercel.app",
       });
       if (inviteError || !invitation.user) {
         return json({ error: inviteError?.message ?? "No se pudo enviar la invitación." }, 400);
