@@ -50,3 +50,27 @@ button,input,select,textarea{font:inherit}button{cursor:pointer}.kicker{color:#3
 @media(max-width:800px){.invite-form>div{grid-template-columns:1fr}.member-list>div{grid-template-columns:38px 1fr}.member-toggle{grid-column:2;justify-self:start}.invite-form .invite-actions{display:flex}}
 .user-tools,.member-actions{display:flex;gap:7px}.member-delete{border:0;background:#fff0ee;color:#a13b32;border-radius:8px;padding:8px;font-size:8px;font-weight:750}.member-delete:disabled{opacity:.35}.bulk-form{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:12px;padding:14px;margin-bottom:15px;background:var(--sun-soft);border-radius:12px}.bulk-form strong,.bulk-form small{display:block}.bulk-form small{color:var(--muted);margin-top:4px}.bulk-form input{font-size:9px}
 @media(max-width:800px){.user-tools{flex-wrap:wrap;justify-content:flex-end}.member-actions{grid-column:2}.bulk-form{grid-template-columns:1fr}}
+
+/* Legibilidad reforzada para escritorio y pantallas táctiles */
+body{font-size:17px;line-height:1.5}
+.kicker{font-size:11px}
+.logo-lockup span,.profile b,.profile small,.panel-head>span,.stat-card p,.money-card p{font-size:11px}
+.hero-row>div>span,.module-title>div>span{font-size:15px}
+.stat-heading h2,.stat-card>span{font-size:15px}
+.stat-card>small,.team-overview small,.quick-grid small,.task span,.empty-state span,.sede-card div>span,.sede-card small,.plan-grid span,.workflow-steps span,.org-list small,.team-list small,.member-list small{font-size:12px}
+.task strong,.quick-grid b,.plan-grid strong,.workflow-steps strong,.ledger-row strong,.member-list strong,.team-list strong,.org-list strong{font-size:14px}
+.bottom-nav button{font-size:12px}
+.bottom-nav button span{font-size:22px}
+button,input,select,textarea{font-size:14px}
+.member-list select{font-size:12px}
+.member-toggle,.member-delete{font-size:11px;padding:10px}
+.info-banner{font-size:13px}
+@media(max-width:800px){
+  body{font-size:18px}
+  .page{padding-left:14px;padding-right:14px}
+  .hero-row>div>span,.module-title>div>span{font-size:13px}
+  .bottom-nav button{font-size:10px;min-height:62px}
+  .bottom-nav button span{font-size:21px}
+  .stat-card>small,.team-overview small,.quick-grid small,.task span,.empty-state span,.sede-card div>span,.sede-card small,.plan-grid span,.workflow-steps span,.org-list small,.team-list small,.member-list small{font-size:12px}
+  input,select,textarea{font-size:16px!important;min-height:44px}
+}
