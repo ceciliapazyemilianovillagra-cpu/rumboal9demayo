@@ -12,7 +12,7 @@ type Organization = {
 };
 type Team = { id: string; organization_id: string; name: string; description: string | null; active: boolean };
 type Member = {
-  organization_id: string; user_id: string; team_id: string | null; role: Role; active: boolean;
+  organization_id: string; user_id: string; team_id: string | null; role: Role; active: boolean; allowed_modules:string[]|null;
   profiles: { id: string; full_name: string; active: boolean } | null;
 };
 type Headquarters = {
@@ -28,6 +28,8 @@ type Claim = { id:number; title:string; description:string; neighbor_name:string
 type Project = { id:number; name:string; objective:string; status:string; priority:string; responsible_user_id:string|null; team_id:string|null; source_claim_id:number|null; start_date:string|null; due_date:string|null; estimated_budget:number };
 type Proposal = { id:number; title:string; theme:string; diagnosis:string; solution:string; beneficiaries:string|null; status:string; responsible_user_id:string|null; source_claim_id:number|null; project_id:number|null };
 type Activity = { id:number; title:string; activity_type:string; description:string|null; starts_at:string; ends_at:string|null; location:string|null; headquarters_id:number|null; team_id:string|null; responsible_user_id:string|null; status:string };
+type Referent = { id:number; full_name:string; phone:string|null; email:string|null; referent_type:string; neighborhood:string|null; circuit:string|null; zone:string|null; headquarters_id:number|null; team_id:string|null; reports_to_user_id:string|null; influence_level:string; status:string; notes:string|null };
+const configurableModules=[["votantes","Votantes"],["sedes","Sedes"],["presupuesto","Presupuesto"],["gestion","Reclamos y proyectos"],["agenda","Agenda"],["propuestas","Propuestas"],["territorio","Territorio y referentes"]] as const;
 
 const roleLabels: Record<Role, string> = {
   admin: "Administrador", coordinacion: "Coordinación", territorio: "Territorio",
@@ -250,6 +252,13 @@ function AdminView({ profile, organization, organizations, teams, members, reloa
     if (error) setMessage("No se pudo actualizar el usuario.");
     else await reloadAll();
   }
+  async function toggleModule(member:Member,moduleId:string){
+    const defaults=member.role==="coordinacion"?configurableModules.map(([id])=>id):member.role==="territorio"?["sedes","gestion","agenda","propuestas","territorio"]:member.role==="finanzas"?["presupuesto","agenda"]:["agenda"];
+    const current=member.allowed_modules??defaults;
+    const next=current.includes(moduleId)?current.filter(id=>id!==moduleId):[...current,moduleId];
+    const {error}=await supabase.from("memberships").update({allowed_modules:next}).eq("organization_id",organization.id).eq("user_id",member.user_id);
+    if(error)setMessage("No se pudieron actualizar los permisos.");else await reloadAll();
+  }
 
   async function inviteMember(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -358,6 +367,7 @@ function AdminView({ profile, organization, organizations, teams, members, reloa
           <select aria-label="Equipo" disabled={!member.active} value={member.team_id ?? ""} onChange={(e) => updateMember(member.user_id, "team_id", e.target.value)}><option value="">Sin equipo</option>{teams.map((t) => <option value={t.id} key={t.id}>{t.name}</option>)}</select>
           <select aria-label="Rol" disabled={!member.active} value={member.role} onChange={(e) => updateMember(member.user_id, "role", e.target.value)}>{Object.entries(roleLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select>
           <div className="member-actions"><button className={`member-toggle ${member.active ? "deactivate" : "activate"}`} disabled={member.user_id === profile.id} onClick={() => toggleMember(member)}>{member.active ? "Desactivar" : "Activar"}</button><button className="member-delete" disabled={member.user_id === profile.id} onClick={() => removeMember(member)}>Borrar</button></div>
+          {member.role!=="admin"&&<div className="module-permissions">{configurableModules.map(([id,label])=><label key={id}><input type="checkbox" checked={(member.allowed_modules??(member.role==="coordinacion"?configurableModules.map(([x])=>x):member.role==="territorio"?["sedes","gestion","agenda","propuestas","territorio"]:member.role==="finanzas"?["presupuesto","agenda"]:["agenda"])).includes(id)} onChange={()=>toggleModule(member,id)}/>{label}</label>)}</div>}
         </div>)}</div>
         <div className="info-banner compact-info">Cada invitado recibirá un enlace para confirmar su cuenta y crear su contraseña. Nunca necesitás conocer su clave.</div>
       </article>
@@ -408,6 +418,13 @@ function AgendaView({user,organization,teams,members,headquarters,items,reload}:
  return <section><ModuleTitle kicker="ORGANIZACIÓN DIARIA" title="Agenda y actividades" subtitle="Reuniones, recorridas, eventos y tareas territoriales."><button className="primary compact" onClick={()=>setOpen(!open)}>＋ Nueva actividad</button></ModuleTitle>{open&&<form className="entry-form panel" onSubmit={submit}><div className="form-grid"><label className="wide">Título<input name="title" required/></label><label>Tipo<select name="activity_type"><option value="reunion">Reunión</option><option value="recorrida">Recorrida</option><option value="evento">Evento</option><option value="capacitacion">Capacitación</option><option value="tarea">Tarea</option></select></label><label>Lugar<input name="location"/></label><label>Inicio<input type="datetime-local" name="starts_at" required/></label><label>Fin<input type="datetime-local" name="ends_at"/></label><label>Sede<select name="headquarters_id"><option value="">Sin sede</option>{headquarters.map(h=><option key={h.id} value={h.id}>{h.name}</option>)}</select></label><label>Equipo<select name="team_id"><option value="">Todos</option>{teams.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></label><label>Responsable<select name="responsible_user_id"><option value="">Sin asignar</option>{members.filter(m=>m.active).map(m=><option key={m.user_id} value={m.user_id}>{m.profiles?.full_name}</option>)}</select></label><label className="wide">Descripción<textarea name="description"/></label></div><div className="form-actions"><button type="button" onClick={()=>setOpen(false)}>Cancelar</button><button className="primary compact">Guardar actividad</button></div></form>}<div className="agenda-layout"><article className="panel"><PanelHead kicker="CALENDARIO MENSUAL" title={new Date().toLocaleDateString("es-AR",{month:"long",year:"numeric"})}/><MonthCalendar activities={items}/></article><article className="panel"><PanelHead kicker="CRONOGRAMA" title="Actividades" aside={`${items.length} registros`}/>{items.length===0?<Empty title="Sin actividades" text="Agregá la primera reunión o recorrida."/>:<div className="activity-list">{items.map(a=><div key={a.id}><time>{new Date(a.starts_at).toLocaleDateString("es-AR",{day:"2-digit",month:"short"})}</time><div><strong>{a.title}</strong><small>{new Date(a.starts_at).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"})} · {a.location||"Sin lugar"}</small></div><select value={a.status} onChange={e=>status(a.id,e.target.value)}><option value="programada">Programada</option><option value="confirmada">Confirmada</option><option value="realizada">Realizada</option><option value="cancelada">Cancelada</option></select></div>)}</div>}</article></div>{message&&<button className="toast" onClick={()=>setMessage("")}>{message}<span>×</span></button>}</section>;
 }
 
+function TerritoryView({user,organization,teams,members,headquarters,items,reload}:{user:User;organization:Organization;teams:Team[];members:Member[];headquarters:Headquarters[];items:Referent[];reload:()=>Promise<void>}){
+ const [open,setOpen]=useState(false),[message,setMessage]=useState("");
+ async function submit(event:FormEvent<HTMLFormElement>){event.preventDefault();const form=event.currentTarget,data=new FormData(form);const {error}=await supabase.from("territorial_referents").insert({organization_id:organization.id,full_name:data.get("full_name"),phone:data.get("phone")||null,email:data.get("email")||null,referent_type:data.get("referent_type"),neighborhood:data.get("neighborhood")||null,circuit:data.get("circuit")||null,zone:data.get("zone")||null,headquarters_id:data.get("headquarters_id")||null,team_id:data.get("team_id")||null,reports_to_user_id:data.get("reports_to_user_id")||null,influence_level:data.get("influence_level"),notes:data.get("notes")||null,created_by:user.id});if(error)setMessage("No se pudo guardar el referente.");else{form.reset();setOpen(false);await reload();}}
+ async function status(id:number,value:string){const {error}=await supabase.from("territorial_referents").update({status:value,updated_at:new Date().toISOString()}).eq("id",id);if(error)setMessage("No se pudo actualizar el referente.");else await reload();}
+ return <section><ModuleTitle kicker="ORGANIZACIÓN TERRITORIAL" title="Referentes y dirigentes" subtitle="Cobertura por barrios, circuitos, sedes y equipos."><button className="primary compact" onClick={()=>setOpen(!open)}>＋ Nuevo referente</button></ModuleTitle><div className="claim-summary"><article><b>{items.filter(i=>i.status==="activo").length}</b><span>Activos</span></article><article><b>{new Set(items.map(i=>i.neighborhood).filter(Boolean)).size}</b><span>Barrios cubiertos</span></article><article><b>{items.filter(i=>i.referent_type==="dirigente").length}</b><span>Dirigentes</span></article><article><b>{items.filter(i=>i.influence_level==="alto").length}</b><span>Alcance alto</span></article></div>{open&&<form className="entry-form panel" onSubmit={submit}><div className="form-grid"><label className="wide">Nombre completo<input name="full_name" required/></label><label>Tipo<select name="referent_type"><option value="referente">Referente</option><option value="dirigente">Dirigente</option><option value="puntero">Puntero</option><option value="colaborador">Colaborador</option></select></label><label>Alcance<select name="influence_level"><option value="bajo">Bajo</option><option value="medio">Medio</option><option value="alto">Alto</option></select></label><label>Teléfono<input name="phone"/></label><label>Correo<input type="email" name="email"/></label><label>Barrio<input name="neighborhood"/></label><label>Circuito<input name="circuit"/></label><label>Zona<input name="zone"/></label><label>Sede<select name="headquarters_id"><option value="">Sin sede</option>{headquarters.map(h=><option key={h.id} value={h.id}>{h.name}</option>)}</select></label><label>Equipo<select name="team_id"><option value="">Sin equipo</option>{teams.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></label><label>Responsable político<select name="reports_to_user_id"><option value="">Sin asignar</option>{members.filter(m=>m.active).map(m=><option key={m.user_id} value={m.user_id}>{m.profiles?.full_name}</option>)}</select></label><label className="wide">Notas<textarea name="notes"/></label></div><div className="form-actions"><button type="button" onClick={()=>setOpen(false)}>Cancelar</button><button className="primary compact">Guardar referente</button></div></form>}<article className="panel"><PanelHead kicker="RED TERRITORIAL" title="Personas registradas" aside={`${items.length} personas`}/>{items.length===0?<Empty title="Sin referentes registrados" text="Agregá dirigentes y colaboradores para visualizar la cobertura territorial."/>:<div className="referent-list">{items.map(r=><div key={r.id}><span>{r.full_name.split(/\s+/).map(x=>x[0]).join("").slice(0,2)}</span><div><strong>{r.full_name}</strong><small>{r.referent_type} · {r.neighborhood||r.zone||"Zona sin definir"} · {r.phone||"Sin teléfono"}</small></div><em>{r.influence_level}</em><select value={r.status} onChange={e=>status(r.id,e.target.value)}><option value="activo">Activo</option><option value="pausado">Pausado</option><option value="desvinculado">Desvinculado</option></select></div>)}</div>}</article>{message&&<button className="toast" onClick={()=>setMessage("")}>{message}<span>×</span></button>}</section>;
+}
+
 function ModuleTitle({ kicker, title, subtitle, children }: { kicker: string; title: string; subtitle: string; children?: React.ReactNode }) {
   return <div className="module-title"><div><p className="kicker">{kicker}</p><h1>{title}</h1><span>{subtitle}</span></div>{children}</div>;
 }
@@ -429,6 +446,8 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
   const [projects, setProjects] = useState<Project[]>([]);
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
+  const [referents, setReferents] = useState<Referent[]>([]);
+  const [menuOpen,setMenuOpen]=useState(false);
   const [notice, setNotice] = useState("");
   const organization = organizations.find((org) => org.id === organizationId) ?? organizations[0];
   const membership = members.find((member) => member.user_id === profile.id);
@@ -443,15 +462,16 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
   }, []);
   const loadContext = useCallback(async () => {
     if (!organizationId) return;
-    const [teamResult, memberResult, sedeResult, budgetResult, claimResult, projectResult, proposalResult, activityResult] = await Promise.all([
+    const [teamResult, memberResult, sedeResult, budgetResult, claimResult, projectResult, proposalResult, activityResult, referentResult] = await Promise.all([
       supabase.from("teams").select("*").eq("organization_id", organizationId).eq("active", true).order("name"),
-      supabase.from("memberships").select("organization_id,user_id,team_id,role,active,profiles(id,full_name,active)").eq("organization_id", organizationId),
+      supabase.from("memberships").select("organization_id,user_id,team_id,role,active,allowed_modules,profiles(id,full_name,active)").eq("organization_id", organizationId),
       supabase.from("headquarters").select("id,name,address,circuit,phone,team_id,responsible_user_id,active").eq("organization_id", organizationId).eq("active", true).order("name"),
       supabase.from("budget_entries").select("id,kind,category,description,amount,occurred_on,status,payment_method").eq("organization_id", organizationId).order("occurred_on", { ascending: false }).limit(100),
       supabase.from("claims").select("*").eq("organization_id",organizationId).order("created_at",{ascending:false}).limit(200),
       supabase.from("projects").select("*").eq("organization_id",organizationId).order("created_at",{ascending:false}).limit(200),
       supabase.from("proposals").select("*").eq("organization_id",organizationId).order("created_at",{ascending:false}).limit(200),
       supabase.from("activities").select("*").eq("organization_id",organizationId).order("starts_at",{ascending:true}).limit(300),
+      supabase.from("territorial_referents").select("*").eq("organization_id",organizationId).order("full_name").limit(500),
     ]);
     setTeams((teamResult.data ?? []) as Team[]);
     setMembers((memberResult.data ?? []) as unknown as Member[]);
@@ -461,30 +481,34 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
     setProjects(projectResult.error?[]:(projectResult.data??[]) as Project[]);
     setProposals(proposalResult.error?[]:(proposalResult.data??[]) as Proposal[]);
     setActivities(activityResult.error?[]:(activityResult.data??[]) as Activity[]);
+    setReferents(referentResult.error?[]:(referentResult.data??[]) as Referent[]);
   }, [organizationId]);
   useEffect(() => { void loadOrganizations(); }, [loadOrganizations]);
   useEffect(() => { void loadContext(); }, [loadContext]);
 
   async function reloadAll() { await loadOrganizations(); await loadContext(); }
-  const modules = [
+  const allModules = [
     { id: "inicio", label: "Inicio", icon: "⌂" }, { id: "votantes", label: "Votantes", icon: "◎" },
     { id: "sedes", label: "Sedes", icon: "◇" }, { id: "presupuesto", label: "Presupuesto", icon: "$" },
     { id: "gestion", label: "Gestión", icon: "!" },
     { id: "agenda", label: "Agenda", icon: "▣" },
     { id: "propuestas", label: "Propuestas", icon: "◆" },
+    { id: "territorio", label: "Territorio", icon: "◎" },
     ...(canAdmin ? [{ id: "admin", label: "Administración", icon: "⚙" }] : []),
   ];
+  const modules=allModules.filter(item=>item.id==="inicio"||item.id==="admin"||profile.is_platform_admin||orgRole==="admin"||(membership?.allowed_modules??(orgRole==="coordinacion"?configurableModules.map(([id])=>id):orgRole==="territorio"?["sedes","gestion","agenda","propuestas","territorio"]:orgRole==="finanzas"?["presupuesto","agenda"]:["agenda"])).includes(item.id));
   function go(id: string) {
     if (id === "presupuesto" && !canFinance) return setNotice("Tu rol no tiene acceso al presupuesto.");
     if (id === "admin" && !canAdmin) return setNotice("Tu rol no tiene acceso a Administración.");
-    setActive(id);
+    if(!modules.some(module=>module.id===id))return setNotice("No tenés permiso para acceder a este módulo.");
+    setActive(id);setMenuOpen(false);
   }
   if (!organization) return <main className="access-state"><Logo /><h1>Sin espacio asignado</h1><p>Tu cuenta está activa, pero aún no pertenece a una organización política.</p><button className="primary compact" onClick={() => void supabase.auth.signOut()}>Cerrar sesión</button></main>;
 
   const initials = profile.full_name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
   return <main className="app-shell">
     <header className="topbar">
-      <Logo compact />
+      <div className="topbar-brand"><button className="menu-trigger" aria-label="Abrir menú" onClick={()=>setMenuOpen(true)}>☰</button><Logo compact /></div>
       <button className="profile" onClick={() => void supabase.auth.signOut()} title="Cerrar sesión"><span>{initials}</span><b>{profile.full_name}</b><em>{roleLabels[orgRole]}</em><small>Salir</small></button>
     </header>
     <div className="page">
@@ -495,9 +519,10 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
       {active === "gestion" && <ManagementView user={session.user} organization={organization} teams={teams} members={members} headquarters={headquarters} claims={claims} projects={projects} reload={loadContext} />}
       {active === "propuestas" && <ProposalsView user={session.user} organization={organization} members={members} claims={claims} projects={projects} items={proposals} reload={loadContext}/>}
       {active === "agenda" && <AgendaView user={session.user} organization={organization} teams={teams} members={members} headquarters={headquarters} items={activities} reload={loadContext}/>}
+      {active === "territorio" && <TerritoryView user={session.user} organization={organization} teams={teams} members={members} headquarters={headquarters} items={referents} reload={loadContext}/>}
       {active === "admin" && <AdminView profile={profile} organization={organization} organizations={organizations} teams={teams} members={members} reloadAll={reloadAll} selectOrganization={setOrganizationId} />}
     </div>
-    <nav className="bottom-nav" aria-label="Navegación principal">{modules.map((item) => <button className={active === item.id ? "active" : ""} onClick={() => go(item.id)} key={item.id}><span>{item.icon}</span>{item.label}</button>)}</nav>
+    {menuOpen&&<button className="menu-backdrop" aria-label="Cerrar menú" onClick={()=>setMenuOpen(false)}/>}<aside className={`side-menu ${menuOpen?"open":""}`}><div className="side-menu-head"><Logo compact/><button onClick={()=>setMenuOpen(false)}>×</button></div><p className="kicker">MÓDULOS HABILITADOS</p><nav aria-label="Navegación principal">{modules.map(item=><button className={active===item.id?"active":""} onClick={()=>go(item.id)} key={item.id}><span>{item.icon}</span>{item.label}</button>)}</nav><div className="side-user"><b>{profile.full_name}</b><span>{roleLabels[orgRole]} · {organization.name}</span></div></aside>
     {notice && <button className="toast" onClick={() => setNotice("")}>{notice}<span>×</span></button>}
   </main>;
 }
