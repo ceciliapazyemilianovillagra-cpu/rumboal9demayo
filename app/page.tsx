@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
+import { TerritoryMap, type MapPoint } from "./territory-map";
 
 type Role = "admin" | "coordinacion" | "territorio" | "finanzas" | "consulta";
 type Profile = { id: string; full_name: string; role: Role; active: boolean; is_platform_admin: boolean };
@@ -18,18 +19,18 @@ type Member = {
 };
 type Headquarters = {
   id: number; name: string; address: string; circuit: string | null; phone: string | null;
-  team_id: string | null; responsible_user_id: string | null; active: boolean;
+  team_id: string | null; responsible_user_id: string | null; active: boolean; latitude:number|null; longitude:number|null;
 };
 type BudgetEntry = {
   id: number; kind: "ingreso" | "gasto" | "compromiso"; category: string;
   description: string; amount: number; occurred_on: string;
   status: "pendiente" | "confirmado" | "cancelado"; payment_method: string | null;
 };
-type Claim = { id:number; title:string; description:string; neighbor_name:string|null; neighbor_phone:string|null; address:string; neighborhood:string|null; category:string; priority:"baja"|"media"|"alta"|"urgente"; status:"nuevo"|"en_revision"|"asignado"|"en_proceso"|"resuelto"|"cerrado"; headquarters_id:number|null; team_id:string|null; responsible_user_id:string|null; created_at:string };
+type Claim = { id:number; title:string; description:string; neighbor_name:string|null; neighbor_phone:string|null; address:string; neighborhood:string|null; category:string; priority:"baja"|"media"|"alta"|"urgente"; status:"nuevo"|"en_revision"|"asignado"|"en_proceso"|"resuelto"|"cerrado"; headquarters_id:number|null; team_id:string|null; responsible_user_id:string|null; created_at:string; latitude:number|null; longitude:number|null };
 type Project = { id:number; name:string; objective:string; status:string; priority:string; responsible_user_id:string|null; team_id:string|null; source_claim_id:number|null; start_date:string|null; due_date:string|null; estimated_budget:number };
 type Proposal = { id:number; title:string; theme:string; diagnosis:string; solution:string; beneficiaries:string|null; status:string; responsible_user_id:string|null; source_claim_id:number|null; project_id:number|null };
 type Activity = { id:number; title:string; activity_type:string; description:string|null; starts_at:string; ends_at:string|null; location:string|null; headquarters_id:number|null; team_id:string|null; responsible_user_id:string|null; status:string };
-type Referent = { id:number; full_name:string; phone:string|null; email:string|null; referent_type:string; neighborhood:string|null; circuit:string|null; zone:string|null; headquarters_id:number|null; team_id:string|null; reports_to_user_id:string|null; influence_level:string; status:string; notes:string|null };
+type Referent = { id:number; full_name:string; phone:string|null; email:string|null; referent_type:string; neighborhood:string|null; circuit:string|null; zone:string|null; headquarters_id:number|null; team_id:string|null; reports_to_user_id:string|null; influence_level:string; status:string; notes:string|null; latitude:number|null; longitude:number|null };
 type VoterImport = { id:string; file_name:string; file_size:number|null; source_format:string; status:string; detected_columns:string[]; total_rows:number; processed_rows:number; error_rows:number; created_at:string };
 type AuditItem = { id:number; entity_type:string; entity_id:string; action:string; details:Record<string,unknown>; created_at:string; actor_id:string|null };
 const configurableModules=[["votantes","Votantes"],["sedes","Sedes"],["presupuesto","Presupuesto"],["gestion","Reclamos y proyectos"],["agenda","Agenda"],["propuestas","Propuestas"],["territorio","Territorio y referentes"]] as const;
@@ -45,6 +46,44 @@ function Logo({ compact = false }: { compact?: boolean }) {
     <img src="/rumbo-logo.png" alt="Logo de Rumbo al 9 de Mayo" />
     <div><span>RUMBO AL</span><strong>9 DE MAYO</strong></div>
   </div>;
+}
+
+function LocationInputs() {
+  const [coordinates,setCoordinates]=useState({latitude:"",longitude:""});
+  const [message,setMessage]=useState("");
+  function locate(){
+    if(!navigator.geolocation)return setMessage("Este dispositivo no permite obtener la ubicación.");
+    setMessage("Buscando ubicación...");
+    navigator.geolocation.getCurrentPosition(
+      position=>{setCoordinates({latitude:position.coords.latitude.toFixed(7),longitude:position.coords.longitude.toFixed(7)});setMessage("Ubicación agregada.");},
+      ()=>setMessage("No se pudo obtener la ubicación. Podés continuar sin mapa."),
+      {enableHighAccuracy:true,timeout:12000}
+    );
+  }
+  return <div className="location-fields"><input type="hidden" name="latitude" value={coordinates.latitude}/><input type="hidden" name="longitude" value={coordinates.longitude}/><button type="button" onClick={locate}>⌖ Usar ubicación actual</button>{message&&<small>{message}</small>}</div>;
+}
+
+function PdfButton({organization,title,columns,rows}:{organization:Organization;title:string;columns:string[];rows:string[][]}){
+  const [busy,setBusy]=useState(false);
+  async function download(){
+    setBusy(true);
+    const {jsPDF}=await import("jspdf");
+    const pdf=new jsPDF({unit:"mm",format:"a4"}),width=210,height=297,margin=16;
+    const generated=new Date().toLocaleString("es-AR");
+    let y=30;
+    const footer=()=>{pdf.setFontSize(8);pdf.setTextColor(100);pdf.text(`Rumbo al 9 de Mayo · ${organization.name}`,margin,height-9);pdf.text(`Generado ${generated} · Página ${pdf.getNumberOfPages()}`,width-margin,height-9,{align:"right"});};
+    const header=()=>{pdf.setFillColor(organization.primary_color);pdf.rect(0,0,width,20,"F");pdf.setTextColor(255);pdf.setFontSize(15);pdf.text("RUMBO AL 9 DE MAYO",margin,9);pdf.setFontSize(9);pdf.text(`${organization.candidate_name} · ${organization.position_sought||organization.name}`,margin,15);pdf.setTextColor(30);pdf.setFontSize(16);pdf.text(title,margin,28);y=37;};
+    header();
+    rows.forEach((row,index)=>{
+      const line=`${index+1}. ${row.map((value,i)=>`${columns[i]}: ${value||"-"}`).join("  ·  ")}`;
+      const lines=pdf.splitTextToSize(line,width-margin*2);
+      if(y+lines.length*5>height-18){footer();pdf.addPage();header();}
+      pdf.setFontSize(9);pdf.setTextColor(35);pdf.text(lines,margin,y);y+=lines.length*5+3;
+    });
+    if(!rows.length){pdf.setFontSize(10);pdf.text("No hay registros para este informe.",margin,y);}
+    footer();pdf.save(`${title.toLowerCase().replace(/[^a-z0-9]+/gi,"-")}.pdf`);setBusy(false);
+  }
+  return <button className="pdf-button" onClick={download} disabled={busy}>{busy?"Preparando...":"↓ Exportar PDF"}</button>;
 }
 
 function Login() {
@@ -116,7 +155,7 @@ function Budget({ user, organization, entries, reload }: {
 
   return <section>
     <ModuleTitle kicker="CONTROL FINANCIERO" title="Presupuesto" subtitle={`Recursos de ${organization.name}.`}>
-      <button className="primary compact" onClick={() => setOpen(!open)}>＋ Nuevo movimiento</button>
+      <div className="module-actions"><PdfButton organization={organization} title="Informe de presupuesto" columns={["Fecha","Tipo","Categoría","Descripción","Monto","Estado"]} rows={entries.map(item=>[new Date(`${item.occurred_on}T12:00:00`).toLocaleDateString("es-AR"),item.kind,item.category,item.description,money.format(Number(item.amount)),item.status])}/><button className="primary compact" onClick={() => setOpen(!open)}>＋ Nuevo movimiento</button></div>
     </ModuleTitle>
     <div className="budget-summary">
       <MoneyCard label="INGRESOS" value={totals.ingreso} tone="income" />
@@ -160,6 +199,7 @@ function HeadquartersView({ organization, teams, members, items, reload }: {
       organization_id: organization.id, name: data.get("name"), address: data.get("address"),
       circuit: data.get("circuit") || null, phone: data.get("phone") || null,
       team_id: data.get("team_id") || null, responsible_user_id: data.get("responsible_user_id") || null,
+      latitude:data.get("latitude")||null,longitude:data.get("longitude")||null,
     });
     if (error) setMessage("No se pudo crear la sede.");
     else { form.reset(); setOpen(false); await reload(); }
@@ -177,6 +217,7 @@ function HeadquartersView({ organization, teams, members, items, reload }: {
         <label>Teléfono<input name="phone" placeholder="Opcional" /></label>
         <label>Equipo<select name="team_id"><option value="">Sin asignar</option>{teams.map((t) => <option value={t.id} key={t.id}>{t.name}</option>)}</select></label>
         <label>Responsable<select name="responsible_user_id"><option value="">Sin asignar</option>{members.map((m) => <option value={m.user_id} key={m.user_id}>{m.profiles?.full_name}</option>)}</select></label>
+        <LocationInputs/>
       </div>
       {message && <p className="form-message">{message}</p>}
       <div className="form-actions"><button type="button" onClick={() => setOpen(false)}>Cancelar</button><button className="primary compact">Crear sede</button></div>
@@ -238,7 +279,7 @@ function VotersView({user,organization,items,reload}:{user:User;organization:Org
 
 function ManagementView({ user, organization, teams, members, headquarters, claims, projects, reload }: { user:User; organization:Organization; teams:Team[]; members:Member[]; headquarters:Headquarters[]; claims:Claim[]; projects:Project[]; reload:()=>Promise<void> }) {
   const [open,setOpen]=useState(false); const [projectOpen,setProjectOpen]=useState(false); const [message,setMessage]=useState("");
-  async function submit(event:FormEvent<HTMLFormElement>){event.preventDefault();const form=event.currentTarget,data=new FormData(form);const {error}=await supabase.from("claims").insert({organization_id:organization.id,title:data.get("title"),description:data.get("description"),neighbor_name:data.get("neighbor_name")||null,neighbor_phone:data.get("neighbor_phone")||null,address:data.get("address"),neighborhood:data.get("neighborhood")||null,category:data.get("category"),priority:data.get("priority"),headquarters_id:data.get("headquarters_id")||null,team_id:data.get("team_id")||null,responsible_user_id:data.get("responsible_user_id")||null,created_by:user.id});if(error)setMessage("No se pudo registrar el reclamo.");else{form.reset();setOpen(false);await reload();}}
+  async function submit(event:FormEvent<HTMLFormElement>){event.preventDefault();const form=event.currentTarget,data=new FormData(form);const {error}=await supabase.from("claims").insert({organization_id:organization.id,title:data.get("title"),description:data.get("description"),neighbor_name:data.get("neighbor_name")||null,neighbor_phone:data.get("neighbor_phone")||null,address:data.get("address"),neighborhood:data.get("neighborhood")||null,category:data.get("category"),priority:data.get("priority"),headquarters_id:data.get("headquarters_id")||null,team_id:data.get("team_id")||null,responsible_user_id:data.get("responsible_user_id")||null,latitude:data.get("latitude")||null,longitude:data.get("longitude")||null,created_by:user.id});if(error)setMessage("No se pudo registrar el reclamo.");else{form.reset();setOpen(false);await reload();}}
   async function changeStatus(id:number,status:string){const {error}=await supabase.from("claims").update({status,updated_at:new Date().toISOString()}).eq("id",id);if(error)setMessage("No se pudo actualizar el estado.");else await reload();}
   async function addProject(event:FormEvent<HTMLFormElement>){event.preventDefault();const form=event.currentTarget,data=new FormData(form);const {error}=await supabase.from("projects").insert({organization_id:organization.id,name:data.get("name"),objective:data.get("objective"),priority:data.get("priority"),team_id:data.get("team_id")||null,responsible_user_id:data.get("responsible_user_id")||null,source_claim_id:data.get("source_claim_id")||null,start_date:data.get("start_date")||null,due_date:data.get("due_date")||null,estimated_budget:Number(data.get("estimated_budget")||0),created_by:user.id});if(error)setMessage("No se pudo crear el proyecto.");else{form.reset();setProjectOpen(false);await reload();}}
   return <section>
@@ -248,8 +289,9 @@ function ManagementView({ user, organization, teams, members, headquarters, clai
       <label className="wide">Título<input name="title" required placeholder="Ej.: Falta de iluminación"/></label><label>Categoría<select name="category"><option>Alumbrado</option><option>Calles</option><option>Seguridad</option><option>Salud</option><option>Agua</option><option>Limpieza</option><option>Otro</option></select></label><label>Prioridad<select name="priority"><option value="baja">Baja</option><option value="media">Media</option><option value="alta">Alta</option><option value="urgente">Urgente</option></select></label>
       <label className="wide">Descripción<textarea name="description" required placeholder="Detalle del problema"/></label><label className="wide">Dirección<input name="address" required placeholder="Calle, número y referencias"/></label><label>Barrio<input name="neighborhood"/></label><label>Vecino/a<input name="neighbor_name"/></label><label>Teléfono<input name="neighbor_phone"/></label>
       <label>Sede<select name="headquarters_id"><option value="">Sin asignar</option>{headquarters.map(h=><option key={h.id} value={h.id}>{h.name}</option>)}</select></label><label>Equipo<select name="team_id"><option value="">Sin asignar</option>{teams.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></label><label>Responsable<select name="responsible_user_id"><option value="">Sin asignar</option>{members.filter(m=>m.active).map(m=><option key={m.user_id} value={m.user_id}>{m.profiles?.full_name}</option>)}</select></label>
+      <LocationInputs/>
     </div>{message&&<p className="form-message">{message}</p>}<div className="form-actions"><button type="button" onClick={()=>setOpen(false)}>Cancelar</button><button className="primary compact">Registrar reclamo</button></div></form>}
-    <article className="panel"><PanelHead kicker="BANDEJA DE SEGUIMIENTO" title="Reclamos registrados" aside={`${claims.length} casos`}/>{claims.length===0?<Empty title="Todavía no hay reclamos" text="Registrá el primer pedido vecinal para comenzar su seguimiento."/>:<div className="claim-list">{claims.map(c=><div className="claim-row" key={c.id}><span className={`priority ${c.priority}`}>!</span><div><strong>{c.title}</strong><small>{c.category} · {c.neighborhood||c.address}</small></div><em>{c.priority}</em><select value={c.status} onChange={e=>changeStatus(c.id,e.target.value)}><option value="nuevo">Nuevo</option><option value="en_revision">En revisión</option><option value="asignado">Asignado</option><option value="en_proceso">En proceso</option><option value="resuelto">Resuelto</option><option value="cerrado">Cerrado</option></select></div>)}</div>}</article>
+    <article className="panel"><PanelHead kicker="BANDEJA DE SEGUIMIENTO" title="Reclamos registrados" aside={<PdfButton organization={organization} title="Informe de reclamos" columns={["Reclamo","Barrio o dirección","Prioridad","Estado"]} rows={claims.map(c=>[c.title,c.neighborhood||c.address,c.priority,c.status])}/>}/>{claims.length===0?<Empty title="Todavía no hay reclamos" text="Registrá el primer pedido vecinal para comenzar su seguimiento."/>:<div className="claim-list">{claims.map(c=><div className="claim-row" key={c.id}><span className={`priority ${c.priority}`}>!</span><div><strong>{c.title}</strong><small>{c.category} · {c.neighborhood||c.address}</small></div><em>{c.priority}</em>{c.neighbor_phone&&<a className="whatsapp-button" target="_blank" rel="noreferrer" href={`https://wa.me/${c.neighbor_phone.replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${c.neighbor_name||""}, te escribimos desde el equipo de ${organization.candidate_name} para continuar el seguimiento de tu reclamo: ${c.title}.`)}`}>WhatsApp</a>}<select value={c.status} onChange={e=>changeStatus(c.id,e.target.value)}><option value="nuevo">Nuevo</option><option value="en_revision">En revisión</option><option value="asignado">Asignado</option><option value="en_proceso">En proceso</option><option value="resuelto">Resuelto</option><option value="cerrado">Cerrado</option></select></div>)}</div>}</article>
     <article className="panel project-panel"><PanelHead kicker="PLANIFICACIÓN" title="Proyectos" aside={<button className="text-button" onClick={()=>setProjectOpen(!projectOpen)}>＋ Nuevo proyecto</button>}/>
       {projectOpen&&<form className="entry-form" onSubmit={addProject}><div className="form-grid"><label className="wide">Nombre<input name="name" required/></label><label className="wide">Objetivo<textarea name="objective" required/></label><label>Prioridad<select name="priority"><option>baja</option><option defaultValue="media">media</option><option>alta</option></select></label><label>Equipo<select name="team_id"><option value="">Sin asignar</option>{teams.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></label><label>Responsable<select name="responsible_user_id"><option value="">Sin asignar</option>{members.filter(m=>m.active).map(m=><option key={m.user_id} value={m.user_id}>{m.profiles?.full_name}</option>)}</select></label><label>Reclamo origen<select name="source_claim_id"><option value="">Sin reclamo</option>{claims.map(c=><option key={c.id} value={c.id}>#{c.id} {c.title}</option>)}</select></label><label>Inicio<input type="date" name="start_date"/></label><label>Vencimiento<input type="date" name="due_date"/></label><label>Presupuesto estimado<input type="number" min="0" name="estimated_budget"/></label></div><div className="form-actions"><button type="button" onClick={()=>setProjectOpen(false)}>Cancelar</button><button className="primary compact">Crear proyecto</button></div></form>}
       {projects.length===0?<Empty title="Todavía no hay proyectos" text="Podés crear uno directamente o vincularlo con un reclamo vecinal."/>:<div className="project-list">{projects.map(p=><div key={p.id}><span>✓</span><div><strong>{p.name}</strong><small>{p.status} · {p.due_date?`vence ${new Date(`${p.due_date}T12:00:00`).toLocaleDateString("es-AR")}`:"sin vencimiento"}</small></div><b>{money.format(Number(p.estimated_budget))}</b></div>)}</div>}
@@ -472,7 +514,7 @@ function AgendaView({user,organization,teams,members,headquarters,items,reload}:
 
 function TerritoryView({user,organization,teams,members,headquarters,items,reload}:{user:User;organization:Organization;teams:Team[];members:Member[];headquarters:Headquarters[];items:Referent[];reload:()=>Promise<void>}){
  const [open,setOpen]=useState(false),[message,setMessage]=useState("");
- async function submit(event:FormEvent<HTMLFormElement>){event.preventDefault();const form=event.currentTarget,data=new FormData(form);const {error}=await supabase.from("territorial_referents").insert({organization_id:organization.id,full_name:data.get("full_name"),phone:data.get("phone")||null,email:data.get("email")||null,referent_type:data.get("referent_type"),neighborhood:data.get("neighborhood")||null,circuit:data.get("circuit")||null,zone:data.get("zone")||null,headquarters_id:data.get("headquarters_id")||null,team_id:data.get("team_id")||null,reports_to_user_id:data.get("reports_to_user_id")||null,influence_level:data.get("influence_level"),notes:data.get("notes")||null,created_by:user.id});if(error)setMessage("No se pudo guardar el referente.");else{form.reset();setOpen(false);await reload();}}
+ async function submit(event:FormEvent<HTMLFormElement>){event.preventDefault();const form=event.currentTarget,data=new FormData(form);const {error}=await supabase.from("territorial_referents").insert({organization_id:organization.id,full_name:data.get("full_name"),phone:data.get("phone")||null,email:data.get("email")||null,referent_type:data.get("referent_type"),neighborhood:data.get("neighborhood")||null,circuit:data.get("circuit")||null,zone:data.get("zone")||null,headquarters_id:data.get("headquarters_id")||null,team_id:data.get("team_id")||null,reports_to_user_id:data.get("reports_to_user_id")||null,influence_level:data.get("influence_level"),notes:data.get("notes")||null,latitude:data.get("latitude")||null,longitude:data.get("longitude")||null,created_by:user.id});if(error)setMessage("No se pudo guardar el referente.");else{form.reset();setOpen(false);await reload();}}
  async function status(id:number,value:string){const {error}=await supabase.from("territorial_referents").update({status:value,updated_at:new Date().toISOString()}).eq("id",id);if(error)setMessage("No se pudo actualizar el referente.");else await reload();}
  return <section><ModuleTitle kicker="ORGANIZACIÓN TERRITORIAL" title="Referentes y dirigentes" subtitle="Cobertura por barrios, circuitos, sedes y equipos."><button className="primary compact" onClick={()=>setOpen(!open)}>＋ Nuevo referente</button></ModuleTitle><div className="claim-summary"><article><b>{items.filter(i=>i.status==="activo").length}</b><span>Activos</span></article><article><b>{new Set(items.map(i=>i.neighborhood).filter(Boolean)).size}</b><span>Barrios cubiertos</span></article><article><b>{items.filter(i=>i.referent_type==="dirigente").length}</b><span>Dirigentes</span></article><article><b>{items.filter(i=>i.influence_level==="alto").length}</b><span>Alcance alto</span></article></div>{open&&<form className="entry-form panel" onSubmit={submit}><div className="form-grid"><label className="wide">Nombre completo<input name="full_name" required/></label><label>Tipo<select name="referent_type"><option value="referente">Referente</option><option value="dirigente">Dirigente</option><option value="puntero">Puntero</option><option value="colaborador">Colaborador</option></select></label><label>Alcance<select name="influence_level"><option value="bajo">Bajo</option><option value="medio">Medio</option><option value="alto">Alto</option></select></label><label>Teléfono<input name="phone"/></label><label>Correo<input type="email" name="email"/></label><label>Barrio<input name="neighborhood"/></label><label>Circuito<input name="circuit"/></label><label>Zona<input name="zone"/></label><label>Sede<select name="headquarters_id"><option value="">Sin sede</option>{headquarters.map(h=><option key={h.id} value={h.id}>{h.name}</option>)}</select></label><label>Equipo<select name="team_id"><option value="">Sin equipo</option>{teams.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></label><label>Responsable político<select name="reports_to_user_id"><option value="">Sin asignar</option>{members.filter(m=>m.active).map(m=><option key={m.user_id} value={m.user_id}>{m.profiles?.full_name}</option>)}</select></label><label className="wide">Notas<textarea name="notes"/></label></div><div className="form-actions"><button type="button" onClick={()=>setOpen(false)}>Cancelar</button><button className="primary compact">Guardar referente</button></div></form>}<article className="panel"><PanelHead kicker="RED TERRITORIAL" title="Personas registradas" aside={`${items.length} personas`}/>{items.length===0?<Empty title="Sin referentes registrados" text="Agregá dirigentes y colaboradores para visualizar la cobertura territorial."/>:<div className="referent-list">{items.map(r=><div key={r.id}><span>{r.full_name.split(/\s+/).map(x=>x[0]).join("").slice(0,2)}</span><div><strong>{r.full_name}</strong><small>{r.referent_type} · {r.neighborhood||r.zone||"Zona sin definir"} · {r.phone||"Sin teléfono"}</small></div><em>{r.influence_level}</em><select value={r.status} onChange={e=>status(r.id,e.target.value)}><option value="activo">Activo</option><option value="pausado">Pausado</option><option value="desvinculado">Desvinculado</option></select></div>)}</div>}</article>{message&&<button className="toast" onClick={()=>setMessage("")}>{message}<span>×</span></button>}</section>;
 }
@@ -502,6 +544,7 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
   const [voterImports, setVoterImports] = useState<VoterImport[]>([]);
   const [auditItems, setAuditItems] = useState<AuditItem[]>([]);
   const [menuOpen,setMenuOpen]=useState(false);
+  const [bellOpen,setBellOpen]=useState(false);
   const [notice, setNotice] = useState("");
   const organization = organizations.find((org) => org.id === organizationId) ?? organizations[0];
   const membership = members.find((member) => member.user_id === profile.id);
@@ -519,7 +562,7 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
     const [teamResult, memberResult, sedeResult, budgetResult, claimResult, projectResult, proposalResult, activityResult, referentResult,importResult,auditResult] = await Promise.all([
       supabase.from("teams").select("*").eq("organization_id", organizationId).eq("active", true).order("name"),
       supabase.from("memberships").select("organization_id,user_id,team_id,role,active,allowed_modules,profiles(id,full_name,active)").eq("organization_id", organizationId),
-      supabase.from("headquarters").select("id,name,address,circuit,phone,team_id,responsible_user_id,active").eq("organization_id", organizationId).eq("active", true).order("name"),
+      supabase.from("headquarters").select("id,name,address,circuit,phone,team_id,responsible_user_id,active,latitude,longitude").eq("organization_id", organizationId).eq("active", true).order("name"),
       supabase.from("budget_entries").select("id,kind,category,description,amount,occurred_on,status,payment_method").eq("organization_id", organizationId).order("occurred_on", { ascending: false }).limit(100),
       supabase.from("claims").select("*").eq("organization_id",organizationId).order("created_at",{ascending:false}).limit(200),
       supabase.from("projects").select("*").eq("organization_id",organizationId).order("created_at",{ascending:false}).limit(200),
@@ -564,11 +607,17 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
   if (!organization) return <main className="access-state"><Logo /><h1>Sin espacio asignado</h1><p>Tu cuenta está activa, pero aún no pertenece a una organización política.</p><button className="primary compact" onClick={() => void supabase.auth.signOut()}>Cerrar sesión</button></main>;
 
   const initials = profile.full_name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
+  const notifications=[
+    ...claims.filter(c=>c.priority==="urgente"&&!["resuelto","cerrado"].includes(c.status)).map(c=>({id:`c${c.id}`,title:"Reclamo urgente",text:c.title,module:"gestion"})),
+    ...projects.filter(p=>p.due_date&&new Date(`${p.due_date}T23:59:59`).getTime()<Date.now()&&!["completado","cancelado"].includes(p.status)).map(p=>({id:`p${p.id}`,title:"Proyecto vencido",text:p.name,module:"gestion"})),
+    ...activities.filter(a=>{const diff=new Date(a.starts_at).getTime()-Date.now();return diff>=0&&diff<=86400000&&!["realizada","cancelada"].includes(a.status)}).map(a=>({id:`a${a.id}`,title:"Actividad próxima",text:a.title,module:"agenda"}))
+  ].slice(0,20);
   return <main className="app-shell" style={{"--navy":organization.primary_color,"--sun":organization.accent_color} as React.CSSProperties}>
     <header className="topbar">
       <div className="topbar-brand"><button className="menu-trigger" aria-label="Abrir menú" onClick={()=>setMenuOpen(true)}>☰</button><Logo compact /></div>
-      <button className="profile" onClick={() => void supabase.auth.signOut()} title="Cerrar sesión"><span>{initials}</span><b>{profile.full_name}</b><em>{roleLabels[orgRole]}</em><small>Salir</small></button>
+      <div className="topbar-actions"><button className="bell-button" aria-label={`Notificaciones: ${notifications.length}`} onClick={()=>setBellOpen(!bellOpen)}>🔔{notifications.length>0&&<b>{notifications.length}</b>}</button><button className="profile" onClick={() => void supabase.auth.signOut()} title="Cerrar sesión"><span>{initials}</span><b>{profile.full_name}</b><em>{roleLabels[orgRole]}</em><small>Salir</small></button></div>
     </header>
+    {bellOpen&&<aside className="notification-panel"><div><strong>Notificaciones</strong><button onClick={()=>setBellOpen(false)}>×</button></div>{notifications.length===0?<Empty title="Todo al día" text="No hay avisos urgentes ni vencimientos cercanos."/>:notifications.map(item=><button key={item.id} onClick={()=>{go(item.module);setBellOpen(false)}}><i/><span><b>{item.title}</b><small>{item.text}</small></span></button>)}</aside>}
     <div className="page">
       {active === "inicio" && <HomeDashboard organization={organization} organizations={organizations} canAdmin={canAdmin} selectOrganization={setOrganizationId} teams={teams} members={members} headquarters={headquarters} entries={entries} claims={claims} projects={projects} activities={activities} referents={referents} go={go} />}
       {active === "votantes" && <VotersView user={session.user} organization={organization} items={voterImports} reload={loadContext}/>}
@@ -578,6 +627,11 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
       {active === "propuestas" && <ProposalsView user={session.user} organization={organization} members={members} claims={claims} projects={projects} items={proposals} reload={loadContext}/>}
       {active === "agenda" && <AgendaView user={session.user} organization={organization} teams={teams} members={members} headquarters={headquarters} items={activities} reload={loadContext}/>}
       {active === "territorio" && <TerritoryView user={session.user} organization={organization} teams={teams} members={members} headquarters={headquarters} items={referents} reload={loadContext}/>}
+      {active === "territorio" && <article className="panel territory-map-panel"><PanelHead kicker="MAPA GRATUITO · OPENSTREETMAP" title="Cobertura territorial" aside={`${headquarters.filter(x=>x.latitude&&x.longitude).length+claims.filter(x=>x.latitude&&x.longitude).length+referents.filter(x=>x.latitude&&x.longitude).length} ubicaciones`}/><TerritoryMap points={[
+        ...headquarters.filter(x=>x.latitude&&x.longitude).map(x=>({id:`s-${x.id}`,latitude:Number(x.latitude),longitude:Number(x.longitude),title:x.name,detail:x.address,kind:"sede" as const})),
+        ...claims.filter(x=>x.latitude&&x.longitude).map(x=>({id:`c-${x.id}`,latitude:Number(x.latitude),longitude:Number(x.longitude),title:x.title,detail:`Reclamo · ${x.address}`,kind:"reclamo" as const})),
+        ...referents.filter(x=>x.latitude&&x.longitude).map(x=>({id:`r-${x.id}`,latitude:Number(x.latitude),longitude:Number(x.longitude),title:x.full_name,detail:`Referente · ${x.neighborhood||x.zone||"Sin zona"}`,kind:"referente" as const}))
+      ] satisfies MapPoint[]}/><div className="map-legend"><span><i className="sede"/>Sedes</span><span><i className="reclamo"/>Reclamos</span><span><i className="referente"/>Referentes</span></div></article>}
       {active === "admin" && <AdminView profile={profile} organization={organization} organizations={organizations} teams={teams} members={members} auditItems={auditItems} reloadAll={reloadAll} selectOrganization={setOrganizationId} />}
     </div>
     {menuOpen&&<button className="menu-backdrop" aria-label="Cerrar menú" onClick={()=>setMenuOpen(false)}/>}<aside className={`side-menu ${menuOpen?"open":""}`}><div className="side-menu-head"><Logo compact/><button onClick={()=>setMenuOpen(false)}>×</button></div><p className="kicker">MÓDULOS HABILITADOS</p><nav aria-label="Navegación principal">{modules.map(item=><button className={active===item.id?"active":""} onClick={()=>go(item.id)} key={item.id}><span>{item.icon}</span>{item.label}</button>)}</nav><div className="side-user"><b>{profile.full_name}</b><span>{roleLabels[orgRole]} · {organization.name}</span></div></aside>

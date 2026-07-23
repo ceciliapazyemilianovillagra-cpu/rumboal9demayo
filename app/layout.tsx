@@ -6,6 +6,7 @@ const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://rumboal9demayo.vercel.app"),
   title: "Rumbo al 9 de Mayo",
   description: "Centro de operaciones para la organización territorial y electoral.",
   applicationName: "Rumbo al 9 de Mayo",
