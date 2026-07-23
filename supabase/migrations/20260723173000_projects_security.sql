@@ -14,7 +14,7 @@ create table if not exists public.projects (
 );
 create index if not exists projects_org_status_idx on public.projects(organization_id,status,due_date);
 alter table public.projects enable row level security;
-create policy projects_select on public.projects for select to authenticated using((select private.is_org_member(organization_id)));
+create policy projects_select on public.projects for select to authenticated using((select private.has_org_role(organization_id,array['admin','coordinacion','territorio']::public.app_role[])));
 create policy projects_insert on public.projects for insert to authenticated with check(created_by=(select auth.uid()) and (select private.has_org_role(organization_id,array['admin','coordinacion','territorio']::public.app_role[])));
 create policy projects_update on public.projects for update to authenticated using((select private.has_org_role(organization_id,array['admin','coordinacion','territorio']::public.app_role[]))) with check((select private.has_org_role(organization_id,array['admin','coordinacion','territorio']::public.app_role[])));
 revoke all on public.projects from anon,authenticated;

@@ -13,7 +13,7 @@ create table if not exists public.claims (
 );
 create index if not exists claims_org_status_idx on public.claims(organization_id,status,created_at desc);
 alter table public.claims enable row level security;
-create policy claims_select on public.claims for select to authenticated using ((select private.is_org_member(organization_id)));
+create policy claims_select on public.claims for select to authenticated using ((select private.has_org_role(organization_id,array['admin','coordinacion','territorio']::public.app_role[])));
 create policy claims_insert on public.claims for insert to authenticated with check (created_by=(select auth.uid()) and (select private.has_org_role(organization_id,array['admin','coordinacion','territorio']::public.app_role[])));
 create policy claims_update on public.claims for update to authenticated using ((select private.has_org_role(organization_id,array['admin','coordinacion','territorio']::public.app_role[]))) with check ((select private.has_org_role(organization_id,array['admin','coordinacion','territorio']::public.app_role[])));
 revoke all on public.claims from anon,authenticated;
