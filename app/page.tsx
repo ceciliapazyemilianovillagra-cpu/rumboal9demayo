@@ -24,6 +24,7 @@ type BudgetEntry = {
   description: string; amount: number; occurred_on: string;
   status: "pendiente" | "confirmado" | "cancelado"; payment_method: string | null;
 };
+type Claim = { id:number; title:string; description:string; neighbor_name:string|null; neighbor_phone:string|null; address:string; neighborhood:string|null; category:string; priority:"baja"|"media"|"alta"|"urgente"; status:"nuevo"|"en_revision"|"asignado"|"en_proceso"|"resuelto"|"cerrado"; headquarters_id:number|null; team_id:string|null; responsible_user_id:string|null; created_at:string };
 
 const roleLabels: Record<Role, string> = {
   admin: "Administrador", coordinacion: "Coordinación", territorio: "Territorio",
@@ -192,31 +193,20 @@ function VotersView() {
   </section>;
 }
 
-function ManagementView() {
+function ManagementView({ user, organization, teams, members, headquarters, claims, reload }: { user:User; organization:Organization; teams:Team[]; members:Member[]; headquarters:Headquarters[]; claims:Claim[]; reload:()=>Promise<void> }) {
+  const [open,setOpen]=useState(false); const [message,setMessage]=useState("");
+  async function submit(event:FormEvent<HTMLFormElement>){event.preventDefault();const form=event.currentTarget,data=new FormData(form);const {error}=await supabase.from("claims").insert({organization_id:organization.id,title:data.get("title"),description:data.get("description"),neighbor_name:data.get("neighbor_name")||null,neighbor_phone:data.get("neighbor_phone")||null,address:data.get("address"),neighborhood:data.get("neighborhood")||null,category:data.get("category"),priority:data.get("priority"),headquarters_id:data.get("headquarters_id")||null,team_id:data.get("team_id")||null,responsible_user_id:data.get("responsible_user_id")||null,created_by:user.id});if(error)setMessage("No se pudo registrar el reclamo.");else{form.reset();setOpen(false);await reload();}}
+  async function changeStatus(id:number,status:string){const {error}=await supabase.from("claims").update({status,updated_at:new Date().toISOString()}).eq("id",id);if(error)setMessage("No se pudo actualizar el estado.");else await reload();}
   return <section>
-    <ModuleTitle kicker="GESTIÓN Y TRAZABILIDAD" title="Proyectos y reclamos" subtitle="Una bandeja única para transformar necesidades vecinales en acciones concretas." />
-    <div className="management-cards">
-      <article className="panel management-card project-card">
-        <span className="management-icon">✓</span>
-        <div><p className="kicker">PROYECTOS</p><h2>Iniciativas del equipo</h2><p>Objetivo, responsable, presupuesto, fechas, avances y documentación.</p></div>
-        <button disabled>＋ Nuevo proyecto</button>
-      </article>
-      <article className="panel management-card claim-card">
-        <span className="management-icon">!</span>
-        <div><p className="kicker">RECLAMOS VECINALES</p><h2>Escucha y respuesta</h2><p>Ingreso por vecino, barrio o sede, con prioridad y seguimiento hasta su resolución.</p></div>
-        <button disabled>＋ Nuevo reclamo</button>
-      </article>
-    </div>
-    <article className="panel workflow-panel">
-      <PanelHead kicker="FLUJO PROPUESTO" title="Cómo funcionará" aside="Próxima etapa" />
-      <div className="workflow-steps">
-        <div><b>1</b><strong>Registrar</strong><span>Pedido, ubicación, contacto y evidencia.</span></div>
-        <div><b>2</b><strong>Clasificar</strong><span>Tema, urgencia, sede y zona.</span></div>
-        <div><b>3</b><strong>Asignar</strong><span>Equipo y persona responsable.</span></div>
-        <div><b>4</b><strong>Resolver</strong><span>Avances, respuesta y cierre verificable.</span></div>
-      </div>
-      <div className="info-banner">Los reclamos podrán convertirse en proyectos. Así se conservará toda la historia desde el pedido del vecino hasta la solución.</div>
-    </article>
+    <ModuleTitle kicker="GESTIÓN TERRITORIAL" title="Reclamos vecinales" subtitle="Registro, asignación y seguimiento hasta su resolución."><button className="primary compact" onClick={()=>setOpen(!open)}>＋ Nuevo reclamo</button></ModuleTitle>
+    <div className="claim-summary"><article><b>{claims.length}</b><span>Total</span></article><article><b>{claims.filter(c=>!["resuelto","cerrado"].includes(c.status)).length}</b><span>Pendientes</span></article><article><b>{claims.filter(c=>c.priority==="urgente").length}</b><span>Urgentes</span></article><article><b>{claims.filter(c=>c.status==="resuelto").length}</b><span>Resueltos</span></article></div>
+    {open&&<form className="entry-form panel" onSubmit={submit}><div className="form-head"><div><p className="kicker">NUEVO RECLAMO</p><h2>Datos del pedido vecinal</h2></div><button type="button" onClick={()=>setOpen(false)}>×</button></div><div className="form-grid">
+      <label className="wide">Título<input name="title" required placeholder="Ej.: Falta de iluminación"/></label><label>Categoría<select name="category"><option>Alumbrado</option><option>Calles</option><option>Seguridad</option><option>Salud</option><option>Agua</option><option>Limpieza</option><option>Otro</option></select></label><label>Prioridad<select name="priority"><option value="baja">Baja</option><option value="media">Media</option><option value="alta">Alta</option><option value="urgente">Urgente</option></select></label>
+      <label className="wide">Descripción<textarea name="description" required placeholder="Detalle del problema"/></label><label className="wide">Dirección<input name="address" required placeholder="Calle, número y referencias"/></label><label>Barrio<input name="neighborhood"/></label><label>Vecino/a<input name="neighbor_name"/></label><label>Teléfono<input name="neighbor_phone"/></label>
+      <label>Sede<select name="headquarters_id"><option value="">Sin asignar</option>{headquarters.map(h=><option key={h.id} value={h.id}>{h.name}</option>)}</select></label><label>Equipo<select name="team_id"><option value="">Sin asignar</option>{teams.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></label><label>Responsable<select name="responsible_user_id"><option value="">Sin asignar</option>{members.filter(m=>m.active).map(m=><option key={m.user_id} value={m.user_id}>{m.profiles?.full_name}</option>)}</select></label>
+    </div>{message&&<p className="form-message">{message}</p>}<div className="form-actions"><button type="button" onClick={()=>setOpen(false)}>Cancelar</button><button className="primary compact">Registrar reclamo</button></div></form>}
+    <article className="panel"><PanelHead kicker="BANDEJA DE SEGUIMIENTO" title="Reclamos registrados" aside={`${claims.length} casos`}/>{claims.length===0?<Empty title="Todavía no hay reclamos" text="Registrá el primer pedido vecinal para comenzar su seguimiento."/>:<div className="claim-list">{claims.map(c=><div className="claim-row" key={c.id}><span className={`priority ${c.priority}`}>!</span><div><strong>{c.title}</strong><small>{c.category} · {c.neighborhood||c.address}</small></div><em>{c.priority}</em><select value={c.status} onChange={e=>changeStatus(c.id,e.target.value)}><option value="nuevo">Nuevo</option><option value="en_revision">En revisión</option><option value="asignado">Asignado</option><option value="en_proceso">En proceso</option><option value="resuelto">Resuelto</option><option value="cerrado">Cerrado</option></select></div>)}</div>}</article>
+    {message&&<button className="toast" onClick={()=>setMessage("")}>{message}<span>×</span></button>}
   </section>;
 }
 
@@ -405,6 +395,7 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
   const [members, setMembers] = useState<Member[]>([]);
   const [headquarters, setHeadquarters] = useState<Headquarters[]>([]);
   const [entries, setEntries] = useState<BudgetEntry[]>([]);
+  const [claims, setClaims] = useState<Claim[]>([]);
   const [notice, setNotice] = useState("");
   const organization = organizations.find((org) => org.id === organizationId) ?? organizations[0];
   const membership = members.find((member) => member.user_id === profile.id);
@@ -419,16 +410,18 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
   }, []);
   const loadContext = useCallback(async () => {
     if (!organizationId) return;
-    const [teamResult, memberResult, sedeResult, budgetResult] = await Promise.all([
+    const [teamResult, memberResult, sedeResult, budgetResult, claimResult] = await Promise.all([
       supabase.from("teams").select("*").eq("organization_id", organizationId).eq("active", true).order("name"),
       supabase.from("memberships").select("organization_id,user_id,team_id,role,active,profiles(id,full_name,active)").eq("organization_id", organizationId),
       supabase.from("headquarters").select("id,name,address,circuit,phone,team_id,responsible_user_id,active").eq("organization_id", organizationId).eq("active", true).order("name"),
       supabase.from("budget_entries").select("id,kind,category,description,amount,occurred_on,status,payment_method").eq("organization_id", organizationId).order("occurred_on", { ascending: false }).limit(100),
+      supabase.from("claims").select("*").eq("organization_id",organizationId).order("created_at",{ascending:false}).limit(200),
     ]);
     setTeams((teamResult.data ?? []) as Team[]);
     setMembers((memberResult.data ?? []) as unknown as Member[]);
     setHeadquarters((sedeResult.data ?? []) as Headquarters[]);
     setEntries(budgetResult.error ? [] : (budgetResult.data ?? []) as BudgetEntry[]);
+    setClaims(claimResult.error?[]:(claimResult.data??[]) as Claim[]);
   }, [organizationId]);
   useEffect(() => { void loadOrganizations(); }, [loadOrganizations]);
   useEffect(() => { void loadContext(); }, [loadContext]);
@@ -458,7 +451,7 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
       {active === "votantes" && <VotersView />}
       {active === "sedes" && <HeadquartersView organization={organization} teams={teams} members={members} items={headquarters} reload={loadContext} />}
       {active === "presupuesto" && <Budget user={session.user} organization={organization} entries={entries} reload={loadContext} />}
-      {active === "gestion" && <ManagementView />}
+      {active === "gestion" && <ManagementView user={session.user} organization={organization} teams={teams} members={members} headquarters={headquarters} claims={claims} reload={loadContext} />}
       {active === "admin" && <AdminView profile={profile} organization={organization} organizations={organizations} teams={teams} members={members} reloadAll={reloadAll} selectOrganization={setOrganizationId} />}
     </div>
     <nav className="bottom-nav" aria-label="Navegación principal">{modules.map((item) => <button className={active === item.id ? "active" : ""} onClick={() => go(item.id)} key={item.id}><span>{item.icon}</span>{item.label}</button>)}</nav>

@@ -33,7 +33,7 @@ test("ships the multi-organization modules and brand asset", async () => {
   ]);
   assert.match(page, /Administración/);
   assert.match(page, /organization_id/);
-  assert.match(page, /Proyectos y reclamos/);
+  assert.match(page, /Reclamos vecinales/);
   assert.match(page, /Nueva sede/);
   assert.match(css, /--navy:#2d2d49/);
   assert.match(css, /--sun:#ffad4d/);
