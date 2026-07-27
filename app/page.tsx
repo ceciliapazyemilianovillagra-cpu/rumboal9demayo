@@ -619,6 +619,38 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
   const [bellOpen,setBellOpen]=useState(false);
   const [notice, setNotice] = useState("");
   const [contextLoading,setContextLoading]=useState(true);
+  const territoryPoints = useMemo<MapPoint[]>(() => [
+    ...headquarters
+      .filter(item => item.latitude && item.longitude)
+      .map(item => ({
+        id:`s-${item.id}`,
+        latitude:Number(item.latitude),
+        longitude:Number(item.longitude),
+        title:item.name,
+        detail:item.address,
+        kind:"sede" as const,
+      })),
+    ...claims
+      .filter(item => item.latitude && item.longitude)
+      .map(item => ({
+        id:`c-${item.id}`,
+        latitude:Number(item.latitude),
+        longitude:Number(item.longitude),
+        title:item.title,
+        detail:`Reclamo · ${item.address}`,
+        kind:"reclamo" as const,
+      })),
+    ...referents
+      .filter(item => item.latitude && item.longitude)
+      .map(item => ({
+        id:`r-${item.id}`,
+        latitude:Number(item.latitude),
+        longitude:Number(item.longitude),
+        title:item.full_name,
+        detail:`Referente · ${item.neighborhood||item.zone||"Sin zona"}`,
+        kind:"referente" as const,
+      })),
+  ], [headquarters,claims,referents]);
   const organization = organizations.find((org) => org.id === organizationId) ?? organizations[0];
   const membership = members.find((member) => member.user_id === profile.id);
   const orgRole: Role = membership?.role ?? (profile.is_platform_admin ? "admin" : profile.role);
@@ -710,11 +742,7 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
       {active === "gestion" && <ManagementView user={session.user} organization={organization} teams={teams} members={members} headquarters={headquarters} claims={claims} projects={projects} reload={loadContext} />}
       {active === "propuestas" && <ProposalsView user={session.user} organization={organization} members={members} claims={claims} projects={projects} items={proposals} reload={loadContext}/>}
       {active === "agenda" && <AgendaView user={session.user} organization={organization} teams={teams} members={members} headquarters={headquarters} items={activities} reload={loadContext}/>}
-      {active === "territorio" && <><ModuleTitle kicker="TERRITORIO EN TIEMPO REAL" title="Mapa de campaña" subtitle="Filtrá sedes, reclamos y referentes; tocá cada punto para ver su información."/><article className="panel territory-map-panel territory-map-primary"><PanelHead kicker="LEAFLET · OPENSTREETMAP" title="Cobertura territorial" aside={`${headquarters.filter(x=>x.latitude&&x.longitude).length+claims.filter(x=>x.latitude&&x.longitude).length+referents.filter(x=>x.latitude&&x.longitude).length} ubicaciones`}/><TerritoryMap points={[
-        ...headquarters.filter(x=>x.latitude&&x.longitude).map(x=>({id:`s-${x.id}`,latitude:Number(x.latitude),longitude:Number(x.longitude),title:x.name,detail:x.address,kind:"sede" as const})),
-        ...claims.filter(x=>x.latitude&&x.longitude).map(x=>({id:`c-${x.id}`,latitude:Number(x.latitude),longitude:Number(x.longitude),title:x.title,detail:`Reclamo · ${x.address}`,kind:"reclamo" as const})),
-        ...referents.filter(x=>x.latitude&&x.longitude).map(x=>({id:`r-${x.id}`,latitude:Number(x.latitude),longitude:Number(x.longitude),title:x.full_name,detail:`Referente · ${x.neighborhood||x.zone||"Sin zona"}`,kind:"referente" as const}))
-      ] satisfies MapPoint[]}/></article><TerritoryView user={session.user} organization={organization} teams={teams} members={members} headquarters={headquarters} items={referents} reload={loadContext}/></>}
+      {active === "territorio" && <><ModuleTitle kicker="TERRITORIO EN TIEMPO REAL" title="Mapa de campaña" subtitle="Filtrá sedes, reclamos y referentes; tocá cada punto para ver su información."/><article className="panel territory-map-panel territory-map-primary"><PanelHead kicker="LEAFLET · MAPA DE CALLES" title="Cobertura territorial" aside={`${territoryPoints.length} ubicaciones`}/><TerritoryMap points={territoryPoints}/></article><TerritoryView user={session.user} organization={organization} teams={teams} members={members} headquarters={headquarters} items={referents} reload={loadContext}/></>}
       {active === "admin" && <AdminView profile={profile} organization={organization} organizations={organizations} teams={teams} members={members} referents={referents} auditItems={auditItems} reloadAll={reloadAll} selectOrganization={setOrganizationId} />}
     </div>
     {menuOpen&&<button className="menu-backdrop" aria-label="Cerrar menú" onClick={()=>setMenuOpen(false)}/>}<aside className={`side-menu ${menuOpen?"open":""}`}><div className="side-menu-head"><Logo compact/><button onClick={()=>setMenuOpen(false)}>×</button></div><p className="kicker">MÓDULOS HABILITADOS</p><nav aria-label="Navegación principal">{modules.map(item=><button className={active===item.id?"active":""} onClick={()=>go(item.id)} key={item.id}><span>{item.icon}</span>{item.label}</button>)}</nav><div className="side-user"><b>{profile.full_name}</b><span>{roleLabels[orgRole]} · {organization.name}</span></div></aside>

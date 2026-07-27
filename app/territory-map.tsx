@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { Map as LeafletMap } from "leaflet";
 import "leaflet/dist/leaflet.css";
+
+const SAN_MIGUEL_DE_TUCUMAN: [number, number] = [-26.8083, -65.2176];
+const TUCUMAN_ZOOM = 13;
 
 export type MapPoint = {
   id: string;
@@ -14,6 +18,7 @@ export type MapPoint = {
 
 export function TerritoryMap({ points }: { points: MapPoint[] }) {
   const elementRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<LeafletMap | null>(null);
   const [visibleKinds,setVisibleKinds]=useState<MapPoint["kind"][]>(["sede","reclamo","referente"]);
   const visiblePoints=useMemo(()=>points.filter(point=>visibleKinds.includes(point.kind)),[points,visibleKinds]);
 
@@ -27,24 +32,40 @@ export function TerritoryMap({ points }: { points: MapPoint[] }) {
     let destroy = () => {};
     void import("leaflet").then((L) => {
       if (disposed || !elementRef.current) return;
-      const center: [number, number] = visiblePoints.length
-        ? [visiblePoints[0].latitude, visiblePoints[0].longitude]
-        : [-26.8083, -65.2176];
-      const map = L.map(elementRef.current, { zoomControl: true }).setView(center, visiblePoints.length ? 13 : 11);
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        attribution: "© OpenStreetMap",
-        maxZoom: 19,
-      }).addTo(map);
+      const map = L.map(elementRef.current, { zoomControl: true, preferCanvas: true })
+        .setView(SAN_MIGUEL_DE_TUCUMAN, TUCUMAN_ZOOM);
+      mapRef.current = map;
+
+      const streetTiles = L.tileLayer(
+        "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
+        {
+          attribution: "© OpenStreetMap contributors © CARTO",
+          maxZoom: 20,
+          subdomains: "abcd",
+        },
+      ).addTo(map);
+      let fallbackApplied = false;
+      streetTiles.once("tileerror", () => {
+        if (disposed || fallbackApplied) return;
+        fallbackApplied = true;
+        map.removeLayer(streetTiles);
+        L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          attribution: "© OpenStreetMap contributors",
+          maxZoom: 19,
+        }).addTo(map);
+      });
+
       const colors = { sede: "#2d2d49", reclamo: "#d66253", referente: "#2d8f70" };
-      const bounds: [number, number][] = [];
       visiblePoints.forEach((point) => {
-        bounds.push([point.latitude, point.longitude]);
         L.circleMarker([point.latitude, point.longitude], {
           radius: 9, color: "#fff", weight: 3, fillColor: colors[point.kind], fillOpacity: 1,
         }).addTo(map).bindPopup(`<strong>${escapeHtml(point.title)}</strong><br>${escapeHtml(point.detail)}`);
       });
-      if (bounds.length > 1) map.fitBounds(bounds, { padding: [30, 30], maxZoom: 15 });
-      destroy = () => map.remove();
+      window.setTimeout(() => map.invalidateSize(), 0);
+      destroy = () => {
+        mapRef.current = null;
+        map.remove();
+      };
     });
     return () => { disposed = true; destroy(); };
   }, [visiblePoints]);
@@ -54,6 +75,7 @@ export function TerritoryMap({ points }: { points: MapPoint[] }) {
       <button className={visibleKinds.includes("sede")?"active":""} onClick={()=>toggleKind("sede")}><i className="sede"/> Sedes <b>{points.filter(point=>point.kind==="sede").length}</b></button>
       <button className={visibleKinds.includes("reclamo")?"active":""} onClick={()=>toggleKind("reclamo")}><i className="reclamo"/> Reclamos <b>{points.filter(point=>point.kind==="reclamo").length}</b></button>
       <button className={visibleKinds.includes("referente")?"active":""} onClick={()=>toggleKind("referente")}><i className="referente"/> Referentes <b>{points.filter(point=>point.kind==="referente").length}</b></button>
+      <button type="button" className="map-home" onClick={()=>mapRef.current?.setView(SAN_MIGUEL_DE_TUCUMAN,TUCUMAN_ZOOM)}>⌖ San Miguel de Tucumán</button>
     </div>
     <div className="leaflet-map" ref={elementRef} aria-label="Mapa territorial interactivo de sedes, reclamos y referentes" />
   </div>;

@@ -26,9 +26,10 @@ test("renders the branded application shell", async () => {
 });
 
 test("ships the multi-organization modules and brand asset", async () => {
-  const [page, css] = await Promise.all([
+  const [page, css, map] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+    readFile(new URL("../app/territory-map.tsx", import.meta.url), "utf8"),
     access(new URL("../public/rumbo-logo.png", import.meta.url)),
   ]);
   assert.match(page, /Administración/);
@@ -38,4 +39,7 @@ test("ships the multi-organization modules and brand asset", async () => {
   assert.match(css, /--navy:#2d2d49/);
   assert.match(css, /--sun:#ffad4d/);
   assert.match(css, /--sky:#78c4e8/);
+  assert.match(css, /\.side-menu nav\{[^}]*overflow-y:auto/);
+  assert.match(map, /SAN_MIGUEL_DE_TUCUMAN/);
+  assert.match(map, /basemaps\.cartocdn\.com/);
 });

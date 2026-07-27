@@ -329,3 +329,69 @@ body{background:#eef1f5}
   .voter-plan{padding:18px 14px}
   .voter-metrics article{padding:14px}
 }
+
+/* Legibilidad, navegación y mapa: revisión posterior a prueba real */
+html{font-size:18px}
+body{font-size:1rem;line-height:1.58;font-weight:450}
+button,input,select,textarea{font-size:15px}
+.kicker{font-size:12px;line-height:1.4}
+.profile b{font-size:13px}.profile em,.profile small{font-size:11px}
+.hero-row>div>span,.module-title>div>span{font-size:16px}
+.stat-heading h2,.stat-card>span{font-size:16px}
+.stat-card>small,.team-overview small,.quick-grid small,.task span,.empty-state span,
+.sede-card div>span,.sede-card small,.plan-grid span,.workflow-steps span,
+.org-list small,.team-list small,.member-list small,.panel-head>span,
+.day-agenda-list small,.campaign-pulse span,.voter-metrics span,.voter-table td,
+.field-worker-grid small,.referent-list small,.activity-list small{font-size:13px}
+.task strong,.quick-grid b,.plan-grid strong,.workflow-steps strong,.ledger-row strong,
+.member-list strong,.team-list strong,.org-list strong,.day-agenda-list strong,
+.field-worker-grid strong,.referent-list strong,.activity-list strong{font-size:15px}
+.form-grid label,.brand-form label,.invite-form label,.voter-toolbar label>span{font-size:13px}
+.ledger-row small,.ledger-row em,.money-card span,.import-list small,.audit-list small{font-size:12px}
+.primary.compact,.pdf-button,.location-fields button,.whatsapp-button{font-size:14px}
+.calendar-days button{font-size:14px}
+.voter-table th{font-size:12px}.voter-table td{font-size:13px}
+
+.side-menu{
+  height:100dvh;
+  bottom:auto;
+  overflow:hidden;
+  display:grid;
+  grid-template-rows:auto auto minmax(0,1fr) auto;
+  padding:max(20px,env(safe-area-inset-top)) 18px max(18px,env(safe-area-inset-bottom));
+}
+.side-menu-head{margin-bottom:18px}
+.side-menu>.kicker{margin-bottom:10px}
+.side-menu nav{
+  min-height:0;
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  scrollbar-width:thin;
+  scrollbar-color:var(--sky) #edf1f5;
+  padding:2px 7px 12px 2px;
+}
+.side-menu nav::-webkit-scrollbar{width:7px}
+.side-menu nav::-webkit-scrollbar-track{background:#edf1f5;border-radius:99px}
+.side-menu nav::-webkit-scrollbar-thumb{background:var(--sky);border-radius:99px}
+.side-menu nav button{font-size:16px;min-height:54px;flex:none}
+.side-menu nav button span{width:36px;height:36px;flex:0 0 36px}
+.side-user{margin-top:12px;padding-top:13px;background:#fff}
+.side-user b{font-size:14px}.side-user span{font-size:12px}
+
+.map-filters{align-items:center}
+.map-filters button{font-size:13px;min-height:42px}
+.map-filters .map-home{margin-left:auto;background:#eef6fa;color:var(--navy);border-color:#b9d8e8}
+.leaflet-map{background:#dce6eb}
+
+@media(max-width:800px){
+  html{font-size:17px}
+  body{font-size:1rem;line-height:1.58}
+  .page{padding-left:16px;padding-right:16px}
+  .hero-row h1{font-size:clamp(30px,9vw,38px)}
+  .hero-row>div>span,.module-title>div>span{font-size:15px}
+  .profile>span{font-size:13px}
+  .side-menu{width:min(360px,calc(100vw - 16px))}
+  .side-menu nav button{font-size:16px;min-height:56px}
+  .map-filters .map-home{width:100%;margin-left:0;justify-content:center}
+  .leaflet-map{height:min(58dvh,460px);min-height:350px}
+}
