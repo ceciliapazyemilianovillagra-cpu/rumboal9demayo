@@ -395,3 +395,542 @@ button,input,select,textarea{font-size:15px}
   .map-filters .map-home{width:100%;margin-left:0;justify-content:center}
   .leaflet-map{height:min(58dvh,460px);min-height:350px}
 }
+
+/* Centro de operaciones / libro de actas */
+:root{
+  --ops-paper:#f5f5f1;
+  --ops-sheet:#fffef9;
+  --ops-ink:#202136;
+  --ops-muted:#606273;
+  --ops-line:#d2d2cc;
+  --ops-line-strong:#92939d;
+  --ops-live:#4aafd9;
+  --ops-urgent:#d86b32;
+  --ops-success:#1f765d;
+  --ops-radius:4px;
+  --paper:var(--ops-paper);
+  --ink:var(--ops-ink);
+  --muted:var(--ops-muted);
+  --line:var(--ops-line);
+  --sky:var(--ops-live);
+  --sky-soft:#e8f5fa;
+  --sun-soft:#fff0e3;
+  --green:var(--ops-success);
+  --coral:#b64a3d;
+  --shadow-sm:none;
+  --shadow-md:none;
+  --shadow-lg:0 22px 60px rgba(32,33,54,.22);
+  --shadow:none;
+}
+
+html,body{background:var(--ops-paper)}
+.app-shell{
+  background:var(--ops-paper)!important;
+  background-image:none!important;
+}
+.app-shell:before,.app-shell:after{display:none!important}
+
+.hero-row h1,
+.module-title h1,
+.login-brand h1,
+.login-heading h2,
+.access-state h1,
+.panel-head h2,
+.quick-section h2,
+.territory-network-head h2,
+.management-card h2,
+.voter-hero h2{
+  font-family:var(--font-operations-heading),"Arial Narrow",Arial,sans-serif;
+  font-weight:800;
+  letter-spacing:.01em;
+}
+.hero-row h1,.module-title h1,.login-brand h1{
+  text-transform:uppercase;
+  line-height:.94;
+}
+
+.topbar{
+  background:rgba(255,254,249,.98);
+  border-bottom:3px solid var(--navy);
+  backdrop-filter:none;
+  box-shadow:none;
+}
+.menu-trigger,.bell-button,.profile>span{
+  border-radius:2px;
+  box-shadow:none;
+}
+.profile>span{background:var(--navy)}
+
+.hero-row{
+  animation:none;
+  border-left:6px solid var(--navy);
+  border-bottom:1px solid var(--ops-line-strong);
+  padding:8px 0 18px 20px;
+}
+.countdown{
+  border:1px solid var(--navy);
+  border-bottom:4px solid var(--ops-urgent);
+  border-radius:2px;
+  background:var(--navy);
+  box-shadow:none;
+}
+.countdown strong{color:#fff}
+.countdown span,.countdown small{color:#dfe0e8}
+.home-organization-switch{
+  border:1px solid var(--ops-line);
+  border-left:4px solid var(--ops-live);
+  border-radius:2px;
+  background:var(--ops-sheet);
+  box-shadow:none;
+}
+.home-organization-switch select{
+  border-radius:2px;
+  background:#fff;
+}
+
+.module-title{
+  position:relative;
+  min-height:108px;
+  overflow:hidden;
+  animation:none;
+  border-left:6px solid var(--navy);
+  border-bottom:3px double var(--navy);
+  padding:14px 126px 18px 22px;
+}
+.module-title:after{
+  content:"";
+  position:absolute;
+  z-index:0;
+  width:96px;
+  height:96px;
+  right:12px;
+  top:4px;
+  background:url("/rumbo-logo.png") center/contain no-repeat;
+  opacity:.09;
+  pointer-events:none;
+}
+.module-title>*{position:relative;z-index:1}
+.module-title h1{font-size:50px;letter-spacing:.015em}
+.kicker{color:#167da8}
+
+.panel,
+.stat-card,
+.money-card,
+.quick-grid button,
+.results-strip article,
+.voter-metrics article,
+.claim-summary article,
+.admin-summary article{
+  border:1px solid var(--ops-line);
+  border-radius:var(--ops-radius);
+  background:var(--ops-sheet);
+  background-image:none;
+  box-shadow:none!important;
+  backdrop-filter:none;
+  animation:none;
+}
+.panel{padding:24px}
+.panel-head{
+  align-items:flex-end;
+  border-bottom:2px solid var(--navy);
+  padding-bottom:11px;
+  margin-bottom:15px;
+}
+.panel-head h2,.quick-section h2{font-size:26px;letter-spacing:.01em}
+.panel-head>span{color:var(--ops-muted)}
+
+.stat-card{
+  border-top:4px solid var(--tone);
+  overflow:hidden;
+}
+.stat-card:after,.money-card:after{display:none}
+.stat-card.blue{--tone:var(--ops-live)}
+.stat-card.green{--tone:var(--ops-success)}
+.stat-card.violet{--tone:var(--navy)}
+.stat-card.amber{--tone:var(--ops-urgent)}
+.card-icon,
+.sede-card .card-symbol,
+.management-icon,
+.workflow-steps b,
+.plan-grid b,
+.org-list>button>span,
+.team-list>div>span,
+.field-worker-grid>div>span,
+.referent-list>div>span,
+.import-list>div>span,
+.audit-list>div>span,
+.avatar{
+  border-radius:2px;
+}
+.stat-card>button,
+.primary,
+.primary.compact,
+.pdf-button,
+.location-fields button,
+.whatsapp-button,
+.member-toggle,
+.member-delete{
+  border-radius:2px;
+  box-shadow:none;
+  transform:none;
+}
+.primary{background:var(--navy)}
+.primary:hover{transform:none;box-shadow:none}
+.text-button{
+  color:#126f98;
+  text-decoration:underline;
+  text-underline-offset:3px;
+}
+
+.money-card{
+  border-left:4px solid var(--tone);
+  overflow:hidden;
+}
+.money-card.income{--tone:var(--ops-success)}
+.money-card.expense{--tone:var(--coral)}
+.money-card.commitment{--tone:var(--ops-urgent)}
+.money-card.available{--tone:var(--ops-live)}
+.admin-summary article{background:var(--navy);color:#fff}
+.admin-summary span{color:var(--sky)}
+.campaign-pulse div{
+  border:1px solid var(--navy);
+  border-radius:2px;
+  background:var(--navy);
+}
+.campaign-pulse b{color:var(--sky)}
+.operation-numbers div,
+.team-overview>div,
+.workflow-steps>div,
+.plan-grid>div,
+.field-worker-grid>div{
+  border:1px solid var(--ops-line);
+  border-radius:2px;
+  background:transparent;
+}
+
+.entry-form,
+.invite-form,
+.bulk-form,
+.territory,
+.agenda,
+.territory-map-primary{
+  background:var(--ops-sheet);
+  background-image:none;
+}
+.entry-form{animation:none}
+.login-card input,
+.inline-form input,
+.stack-form input,
+.stack-form textarea,
+.form-grid input,
+.form-grid select,
+.form-grid textarea,
+.brand-form input,
+.brand-form select,
+.invite-form input,
+.invite-form select,
+.voter-toolbar input,
+.voter-toolbar select,
+.voter-table select,
+.claim-row select,
+.proposal-list select,
+.activity-list select,
+.referent-list select{
+  border-radius:2px;
+  background:#fff;
+}
+.info-banner{
+  border:1px solid #efc59f;
+  border-left:4px solid var(--ops-urgent);
+  border-radius:2px;
+  background:#fff5eb;
+  color:#75401d;
+}
+.priority{border-radius:2px}
+.priority.alta,.priority.urgente{
+  background:#fff0e3;
+  color:#9b431d;
+  border:1px solid #e9b084;
+}
+
+.ledger-list,
+.claim-list,
+.project-list,
+.proposal-list,
+.activity-list,
+.day-agenda-list,
+.referent-list,
+.import-list,
+.audit-list,
+.org-list,
+.team-list,
+.member-list{
+  counter-reset:operations-row;
+}
+.ledger-row,
+.claim-row,
+.project-list>div,
+.proposal-list>div,
+.activity-list>div,
+.day-agenda-list>button,
+.referent-list>div,
+.import-list>div,
+.audit-list>div,
+.org-list>button,
+.team-list>div,
+.member-list>div{
+  position:relative;
+  counter-increment:operations-row;
+  border:0;
+  border-top:1px solid var(--ops-line);
+  border-radius:0;
+  background:transparent;
+  box-shadow:none;
+  padding-left:55px!important;
+  transform:none;
+}
+.ledger-row:before,
+.claim-row:before,
+.project-list>div:before,
+.proposal-list>div:before,
+.activity-list>div:before,
+.day-agenda-list>button:before,
+.referent-list>div:before,
+.import-list>div:before,
+.audit-list>div:before,
+.org-list>button:before,
+.team-list>div:before,
+.member-list>div:before{
+  content:counter(operations-row,decimal-leading-zero);
+  position:absolute;
+  left:5px;
+  top:50%;
+  width:36px;
+  padding:3px 0;
+  transform:translateY(-50%);
+  border-right:1px solid var(--ops-line-strong);
+  color:#777987;
+  font:700 11px var(--font-geist-mono);
+  text-align:left;
+}
+.day-agenda-list{gap:0}
+.day-agenda-list>button{width:100%}
+.voter-table-wrap{
+  border-radius:2px;
+  border-color:var(--ops-line-strong);
+}
+.voter-table{background:var(--ops-sheet)}
+.voter-table th{
+  background:var(--navy);
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+.voter-table tbody{counter-reset:voter-row}
+.voter-table tbody tr{counter-increment:voter-row}
+.voter-table tbody td:first-child{
+  position:relative;
+  padding-left:58px;
+}
+.voter-table tbody td:first-child:before{
+  content:counter(voter-row,decimal-leading-zero);
+  position:absolute;
+  left:14px;
+  top:50%;
+  transform:translateY(-50%);
+  color:#767887;
+  font:700 11px var(--font-geist-mono);
+}
+.voter-table tbody tr:hover{background:#edf8fc}
+
+.calendar-days button,.calendar-days span{
+  border-radius:2px;
+  box-shadow:none;
+  transform:none;
+}
+.calendar-days button:hover{
+  transform:none;
+  border-color:var(--ops-live);
+  box-shadow:none;
+}
+.calendar-days button.selected{
+  border-color:var(--ops-live);
+  outline:2px solid color-mix(in srgb,var(--ops-live) 35%,transparent);
+}
+.calendar-days button.has-event:after,.calendar-days .has-event:after{
+  background:var(--ops-live);
+  box-shadow:none;
+}
+
+.territory-map-primary{border-top:4px solid var(--navy)}
+.map-filters button{
+  border-radius:2px;
+  box-shadow:none!important;
+}
+.leaflet-map{
+  border:1px solid var(--ops-line-strong);
+  border-radius:0;
+  box-shadow:none;
+}
+
+.admin-tabs{
+  gap:0;
+  padding:0;
+  border:1px solid var(--ops-line);
+  border-radius:2px;
+  background:var(--ops-sheet);
+}
+.admin-tabs button{
+  border-right:1px solid var(--ops-line);
+  border-radius:0;
+}
+.admin-tabs button:last-child{border-right:0}
+.admin-tabs button span{border-radius:2px}
+.admin-tabs button.active{
+  background:var(--navy);
+  color:#fff;
+  box-shadow:none;
+}
+.org-list>button.selected{
+  border-left:4px solid var(--ops-live);
+  background:#eef8fb;
+}
+
+.side-menu{
+  border-right:5px solid var(--navy);
+  background:var(--ops-sheet);
+  box-shadow:var(--shadow-lg);
+}
+.side-menu-head>button,
+.side-menu nav button,
+.side-menu nav button span{
+  border-radius:2px;
+}
+.side-menu nav button.active{box-shadow:none}
+.notification-panel,.toast{border-radius:3px}
+
+.login-shell{
+  background:var(--ops-paper);
+  background-image:none;
+}
+.login-brand{
+  background:var(--navy);
+  background-image:none;
+}
+.login-brand:after{
+  width:min(520px,70vw);
+  height:min(520px,70vw);
+  right:-10%;
+  bottom:-16%;
+  border:0;
+  border-radius:0;
+  background:url("/rumbo-logo.png") center/contain no-repeat;
+  box-shadow:none;
+  opacity:.075;
+}
+.login-card{
+  border:1px solid var(--ops-line-strong);
+  border-top:6px solid var(--navy);
+  border-radius:2px;
+  background:var(--ops-sheet);
+  box-shadow:none;
+  animation:none;
+}
+.loading-screen,.access-state{
+  background:var(--navy);
+  background-image:none;
+  color:#fff;
+}
+.loading-screen .logo-lockup,.access-state .logo-lockup{color:#fff}
+.loading-screen p,.access-state p,.splash-copy span{color:#dfe0e8}
+.splash-progress{border-radius:2px}
+.splash-progress i{border-radius:0;background:var(--ops-live)}
+.loading-screen .logo-lockup,.loading-screen p{animation:none}
+
+@media(hover:hover){
+  .panel:hover,.stat-card:hover,.money-card:hover,.results-strip article:hover{
+    border-color:var(--ops-line-strong);
+    box-shadow:none;
+    transform:none;
+  }
+  .side-menu nav button:hover:not(.active){
+    background:var(--sky-soft);
+    transform:none;
+  }
+  .claim-row:hover,
+  .ledger-row:hover,
+  .activity-list>div:hover,
+  .referent-list>div:hover,
+  .proposal-list>div:hover,
+  .project-list>div:hover,
+  .member-list>div:hover,
+  .team-list>div:hover{
+    background:#f3f8f9;
+    transform:none;
+  }
+  .menu-trigger:hover,.bell-button:hover,.pdf-button:hover,.location-fields button:hover,.whatsapp-button:hover{
+    transform:none;
+    box-shadow:none;
+  }
+}
+
+@media(max-width:800px){
+  .hero-row{
+    border-left-width:4px;
+    padding:6px 0 14px 13px;
+  }
+  .module-title{
+    min-height:94px;
+    padding:12px 80px 14px 15px;
+    border-left-width:4px;
+  }
+  .module-title:after{
+    width:66px;
+    height:66px;
+    right:7px;
+    top:8px;
+  }
+  .module-title h1{font-size:clamp(34px,10vw,43px)}
+  .panel,.stat-card,.money-card,.login-card{border-radius:2px}
+  .panel{padding:18px 15px}
+  .panel-head{align-items:flex-start}
+  .panel-head h2{font-size:24px}
+  .ledger-row,
+  .claim-row,
+  .project-list>div,
+  .proposal-list>div,
+  .activity-list>div,
+  .day-agenda-list>button,
+  .referent-list>div,
+  .import-list>div,
+  .audit-list>div,
+  .org-list>button,
+  .team-list>div,
+  .member-list>div{
+    padding-left:48px!important;
+  }
+  .ledger-row:before,
+  .claim-row:before,
+  .project-list>div:before,
+  .proposal-list>div:before,
+  .activity-list>div:before,
+  .day-agenda-list>button:before,
+  .referent-list>div:before,
+  .import-list>div:before,
+  .audit-list>div:before,
+  .org-list>button:before,
+  .team-list>div:before,
+  .member-list>div:before{
+    left:3px;
+    width:31px;
+  }
+  .admin-tabs{grid-template-columns:1fr 1fr}
+  .admin-tabs button{border-bottom:1px solid var(--ops-line)}
+  .login-brand:after{width:270px;height:270px}
+}
+
+@media(max-width:440px){
+  .module-title{padding-right:68px}
+  .module-title:after{width:56px;height:56px}
+  .admin-tabs{grid-template-columns:1fr}
+  .admin-tabs button{border-right:0}
+}

@@ -26,8 +26,9 @@ test("renders the branded application shell", async () => {
 });
 
 test("ships the multi-organization modules and brand asset", async () => {
-  const [page, css, map, mapTiles, serviceWorker] = await Promise.all([
+  const [page, layout, css, map, mapTiles, serviceWorker] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../app/territory-map.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/map-tiles/[z]/[x]/[y]/route.ts", import.meta.url), "utf8"),
@@ -42,6 +43,11 @@ test("ships the multi-organization modules and brand asset", async () => {
   assert.match(css, /--sun:#ffad4d/);
   assert.match(css, /--sky:#78c4e8/);
   assert.match(css, /\.side-menu nav\{[^}]*overflow-y:auto/);
+  assert.match(layout, /Barlow_Condensed/);
+  assert.match(css, /--ops-paper:#f5f5f1/);
+  assert.match(css, /background:url\("\/rumbo-logo\.png"\)/);
+  assert.match(css, /counter-reset:operations-row/);
+  assert.match(css, /\.app-shell:before,.app-shell:after\{display:none!important\}/);
   assert.match(map, /SAN_MIGUEL_DE_TUCUMAN/);
   assert.match(map, /\/api\/map-tiles\/\{z\}\/\{x\}\/\{y\}/);
   assert.match(mapTiles, /basemaps\.cartocdn\.com/);
