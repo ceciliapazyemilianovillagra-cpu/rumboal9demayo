@@ -36,24 +36,12 @@ export function TerritoryMap({ points }: { points: MapPoint[] }) {
         .setView(SAN_MIGUEL_DE_TUCUMAN, TUCUMAN_ZOOM);
       mapRef.current = map;
 
-      const streetTiles = L.tileLayer(
-        "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
-        {
-          attribution: "© OpenStreetMap contributors © CARTO",
-          maxZoom: 20,
-          subdomains: "abcd",
-        },
-      ).addTo(map);
-      let fallbackApplied = false;
-      streetTiles.once("tileerror", () => {
-        if (disposed || fallbackApplied) return;
-        fallbackApplied = true;
-        map.removeLayer(streetTiles);
-        L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-          attribution: "© OpenStreetMap contributors",
-          maxZoom: 19,
-        }).addTo(map);
-      });
+      L.tileLayer("/api/map-tiles/{z}/{x}/{y}", {
+        attribution: "© OpenStreetMap contributors © CARTO",
+        maxZoom: 19,
+        keepBuffer: 3,
+        updateWhenIdle: true,
+      }).addTo(map);
 
       const colors = { sede: "#2d2d49", reclamo: "#d66253", referente: "#2d8f70" };
       visiblePoints.forEach((point) => {
