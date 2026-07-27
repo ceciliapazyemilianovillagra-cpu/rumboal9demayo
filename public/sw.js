@@ -1,4 +1,4 @@
-const CACHE_NAME = "rumbo-al-9-shell-v1";
+const CACHE_NAME = "rumbo-al-9-shell-v2";
 const APP_SHELL = ["/", "/manifest.webmanifest", "/rumbo-logo.png"];
 
 self.addEventListener("install", (event) => {
