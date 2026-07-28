@@ -44,10 +44,14 @@ test("ships the multi-organization modules and brand asset", async () => {
   assert.match(css, /--sky:#78c4e8/);
   assert.match(css, /\.side-menu nav\{[^}]*overflow-y:auto/);
   assert.match(layout, /Barlow_Condensed/);
-  assert.match(css, /--ops-paper:#f5f5f1/);
+  assert.match(page, /DashboardMetricCard/);
+  assert.match(page, /OPERACIÓN EN CURSO/);
+  assert.match(css, /--premium-deep:#101a46/);
+  assert.match(css, /html\{\s*font-size:19px/);
+  assert.match(css, /\.module-stage\{animation:premium-stage-in/);
+  assert.match(css, /@media\(prefers-reduced-motion:reduce\)/);
   assert.match(css, /background:url\("\/rumbo-logo\.png"\)/);
-  assert.match(css, /counter-reset:operations-row/);
-  assert.match(css, /\.app-shell:before,.app-shell:after\{display:none!important\}/);
+  assert.match(css, /grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
   assert.match(map, /SAN_MIGUEL_DE_TUCUMAN/);
   assert.match(map, /\/api\/map-tiles\/\{z\}\/\{x\}\/\{y\}/);
   assert.match(mapTiles, /basemaps\.cartocdn\.com/);

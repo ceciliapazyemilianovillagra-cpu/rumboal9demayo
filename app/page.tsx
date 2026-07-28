@@ -44,6 +44,8 @@ const money = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS
 
 function Logo({ compact = false }: { compact?: boolean }) {
   return <div className={`logo-lockup ${compact ? "compact" : ""}`}>
+    {/* vinext sirve este activo local sin el runtime de optimización de Next Image. */}
+    {/* eslint-disable-next-line @next/next/no-img-element */}
     <img src="/rumbo-logo.png" alt="Logo de Rumbo al 9 de Mayo" />
     <div><span>RUMBO AL</span><strong>9 DE MAYO</strong></div>
   </div>;
@@ -516,6 +518,51 @@ function AdminView({ profile, organization, organizations, teams, members, refer
   </section>;
 }
 
+function DashboardMetricCard({
+  tone,
+  icon,
+  title,
+  eyebrow,
+  value,
+  detail,
+  helper,
+  badge,
+  progress,
+  action,
+  onClick,
+}: {
+  tone: "blue" | "green" | "violet" | "amber";
+  icon: string;
+  title: string;
+  eyebrow: string;
+  value: string;
+  detail: string;
+  helper: string;
+  badge: string;
+  progress?: number;
+  action: string;
+  onClick: () => void;
+}) {
+  const safeProgress = Math.max(0, Math.min(100, progress ?? 0));
+  return <article className={`stat-card ${tone}`}>
+    <div className="stat-heading">
+      <div className="card-icon" aria-hidden="true">{icon}</div>
+      <h2>{title}</h2>
+      <span className="metric-badge">{badge}</span>
+    </div>
+    <p>{eyebrow}</p>
+    <strong>{value}</strong>
+    <span>{detail}</span>
+    <div className="metric-spark" aria-hidden="true"><i/><i/><i/><i/><i/><i/></div>
+    {progress !== undefined && <div className="metric-progress" aria-label={`${Math.round(safeProgress)} por ciento`}>
+      <i style={{ width: `${safeProgress}%` }}/>
+      <small>{Math.round(safeProgress)}%</small>
+    </div>}
+    <small>{helper}</small>
+    <button onClick={onClick}>{action}<span aria-hidden="true">→</span></button>
+  </article>;
+}
+
 function HomeDashboard({ organization, organizations, canAdmin, selectOrganization, teams, members, headquarters, entries, claims, projects, activities, referents, voters, go }: {
   organization: Organization; organizations: Organization[]; canAdmin: boolean; selectOrganization: (id: string) => void;
   teams: Team[]; members: Member[]; headquarters: Headquarters[]; entries: BudgetEntry[]; claims:Claim[]; projects:Project[]; activities:Activity[]; referents:Referent[]; voters:Voter[]; go: (id: string) => void;
@@ -528,14 +575,35 @@ function HomeDashboard({ organization, organizations, canAdmin, selectOrganizati
   const dayActivities=activitiesForDate(activities,selectedDate);
   const selectedLabel=new Date(`${selectedDate}T12:00:00`).toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long"});
   const activeWorkers=members.filter(member=>member.active).length+referents.filter(referent=>referent.status==="activo").length;
+  const totalWorkers=members.length+referents.length;
+  const contactedVoters=voters.filter(voter=>voter.contact_status!=="sin_contactar").length;
+  const urgentClaims=claims.filter(claim=>claim.priority==="urgente"&&!["resuelto","cerrado"].includes(claim.status)).length;
+  const activeProjects=projects.filter(project=>!["completado","cancelado"].includes(project.status)).length;
+  const workerRate=totalWorkers?activeWorkers/totalWorkers*100:0;
+  const voterRate=voters.length?contactedVoters/voters.length*100:0;
+  const budgetUse=totals.ingreso?(totals.gasto+totals.compromiso)/totals.ingreso*100:0;
+  const todayLabel=new Date().toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long"});
   return <>
-    <section className="hero-row"><div><p className="kicker">CENTRO DE OPERACIONES</p><h1>{organization.candidate_name}</h1><span>{organization.name} · {organization.position_sought}</span></div><div className="countdown"><span>CUENTA REGRESIVA</span><strong>{days}</strong><b>DÍAS</b><small>HASTA EL 9 DE MAYO</small></div></section>
+    <section className="hero-row">
+      <div className="hero-copy">
+        <div className="hero-status"><i/> OPERACIÓN EN CURSO <span>{todayLabel}</span></div>
+        <p className="kicker">CENTRO DE OPERACIONES</p>
+        <h1>{organization.candidate_name}</h1>
+        <span>{organization.name} · {organization.position_sought}</span>
+        <div className="hero-chips">
+          <b>{activeWorkers} personas activas</b>
+          <b>{urgentClaims} urgencias</b>
+          <b>{activeProjects} proyectos en marcha</b>
+        </div>
+      </div>
+      <div className="countdown"><span>CUENTA REGRESIVA</span><strong>{days}</strong><b>DÍAS</b><small>HASTA EL 9 DE MAYO</small></div>
+    </section>
     {canAdmin && organizations.length > 1 && <div className="home-organization-switch"><label htmlFor="home-organization">Espacio político activo</label><select id="home-organization" value={organization.id} onChange={(e) => selectOrganization(e.target.value)}>{organizations.map((org) => <option value={org.id} key={org.id}>{org.name}</option>)}</select></div>}
     <section className="stats-grid home-kpis">
-      <article className="stat-card blue"><div className="stat-heading"><div className="card-icon">◎</div><h2>Equipo operativo</h2></div><p>PERSONAS ACTIVAS</p><strong>{activeWorkers}</strong><span>{teams.length} equipos organizados</span><small>Usuarios y colaboradores territoriales</small><button onClick={() => go("admin")}>Ver organización</button></article>
-      <article className="stat-card green"><div className="stat-heading"><div className="card-icon">⌂</div><h2>Cobertura territorial</h2></div><p>SEDES ACTIVAS</p><strong>{headquarters.length}</strong><span>{new Set(referents.map(item=>item.neighborhood).filter(Boolean)).size} barrios con referentes</span><small>Mapa y red territorial actualizados</small><button onClick={() => go("territorio")}>Abrir mapa</button></article>
-      <article className="stat-card violet"><div className="stat-heading"><div className="card-icon">◉</div><h2>Base electoral</h2></div><p>VOTANTES DEMO</p><strong>{voters.length}</strong><span>{voters.filter(voter=>voter.contact_status!=="sin_contactar").length} contactos trabajados</span><small>Ejemplo ficticio listo para presentar</small><button onClick={() => go("votantes")}>Explorar padrón</button></article>
-      <article className="stat-card amber"><div className="stat-heading"><div className="card-icon">$</div><h2>Recursos de campaña</h2></div><p>SALDO PROYECTADO</p><strong>{money.format(totals.ingreso - totals.gasto - totals.compromiso)}</strong><span>{entries.length} movimientos registrados</span><small>Ingresos, gastos y compromisos</small><button onClick={() => go("presupuesto")}>Ver presupuesto</button></article>
+      <DashboardMetricCard tone="blue" icon="◎" title="Equipo operativo" eyebrow="PERSONAS ACTIVAS" value={String(activeWorkers)} detail={`${teams.length} equipos organizados`} helper="Usuarios y colaboradores territoriales" badge="EQUIPO" progress={workerRate} action="Ver organización" onClick={() => go("admin")}/>
+      <DashboardMetricCard tone="green" icon="⌂" title="Cobertura territorial" eyebrow="SEDES ACTIVAS" value={String(headquarters.length)} detail={`${new Set(referents.map(item=>item.neighborhood).filter(Boolean)).size} barrios con referentes`} helper="Mapa y red territorial actualizados" badge="MAPA" action="Abrir territorio" onClick={() => go("territorio")}/>
+      <DashboardMetricCard tone="violet" icon="◉" title="Base electoral" eyebrow="VOTANTES DEMO" value={String(voters.length)} detail={`${contactedVoters} contactos trabajados`} helper="Ejemplo ficticio listo para presentar" badge="PADRÓN" progress={voterRate} action="Explorar votantes" onClick={() => go("votantes")}/>
+      <DashboardMetricCard tone="amber" icon="$" title="Recursos de campaña" eyebrow="SALDO PROYECTADO" value={money.format(totals.ingreso - totals.gasto - totals.compromiso)} detail={`${entries.length} movimientos registrados`} helper="Ingresos, gastos y compromisos" badge="CONTROL" progress={budgetUse} action="Ver presupuesto" onClick={() => go("presupuesto")}/>
     </section>
     <section className="home-agenda-grid">
       <article className="panel calendar-panel"><PanelHead kicker="CALENDARIO INTERACTIVO" title={new Date().toLocaleDateString("es-AR",{month:"long",year:"numeric"})} aside="Elegí un día"/><MonthCalendar activities={activities} selectedDate={selectedDate} onSelectDate={setSelectedDate}/></article>
@@ -730,11 +798,11 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
   ].slice(0,20);
   return <main className="app-shell" style={{"--navy":organization.primary_color,"--sun":organization.accent_color} as React.CSSProperties}>
     <header className="topbar">
-      <div className="topbar-brand"><button className="menu-trigger" aria-label="Abrir menú" onClick={()=>setMenuOpen(true)}>☰</button><Logo compact /></div>
-      <div className="topbar-actions"><button className="bell-button" aria-label={`Notificaciones: ${notifications.length}`} onClick={()=>setBellOpen(!bellOpen)}>🔔{notifications.length>0&&<b>{notifications.length}</b>}</button><button className="profile" onClick={() => void supabase.auth.signOut()} title="Cerrar sesión"><span>{initials}</span><b>{profile.full_name}</b><em>{roleLabels[orgRole]}</em><small>Salir</small></button></div>
+      <div className="topbar-brand"><button className="menu-trigger" aria-label="Abrir menú" aria-expanded={menuOpen} onClick={()=>setMenuOpen(true)}>☰</button><Logo compact /><span className="topbar-live"><i/> CENTRO OPERATIVO</span></div>
+      <div className="topbar-actions"><button className="bell-button" aria-label={`Notificaciones: ${notifications.length}`} aria-expanded={bellOpen} onClick={()=>setBellOpen(!bellOpen)}>🔔{notifications.length>0&&<b>{notifications.length}</b>}</button><button className="profile" onClick={() => void supabase.auth.signOut()} title="Cerrar sesión"><span>{initials}</span><b>{profile.full_name}</b><em>{roleLabels[orgRole]}</em><small>Salir</small></button></div>
     </header>
     {bellOpen&&<aside className="notification-panel"><div><strong>Notificaciones</strong><button onClick={()=>setBellOpen(false)}>×</button></div>{notifications.length===0?<Empty title="Todo al día" text="No hay avisos urgentes ni vencimientos cercanos."/>:notifications.map(item=><button key={item.id} onClick={()=>{go(item.module);setBellOpen(false)}}><i/><span><b>{item.title}</b><small>{item.text}</small></span></button>)}</aside>}
-    <div className="page">
+    <div className="page module-stage" key={active}>
       {active === "inicio" && <HomeDashboard organization={organization} organizations={organizations} canAdmin={canAdmin} selectOrganization={setOrganizationId} teams={teams} members={members} headquarters={headquarters} entries={entries} claims={claims} projects={projects} activities={activities} referents={referents} voters={voters} go={go} />}
       {active === "votantes" && <VotersView user={session.user} organization={organization} items={voterImports} voters={voters} reload={loadContext}/>}
       {active === "sedes" && <HeadquartersView organization={organization} teams={teams} members={members} items={headquarters} reload={loadContext} />}
