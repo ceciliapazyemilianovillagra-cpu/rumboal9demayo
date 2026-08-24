@@ -2093,6 +2093,8 @@ textarea{min-height:116px}
 .map-tools>div{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
 .map-tools button{border:1px solid var(--line);background:#fff;color:var(--navy);border-radius:10px;padding:9px 12px;font-size:12px;font-weight:800;transition:.2s}
 .map-tools button:hover{background:var(--sky-soft);transform:translateY(-1px)}
+.map-tools .map-create-headquarters{background:var(--navy);border-color:var(--navy);color:#fff;box-shadow:0 8px 20px color-mix(in srgb,var(--navy) 22%,transparent)}
+.location-fields b{font:750 12px var(--font-geist-mono);color:var(--navy);padding:8px 10px;border-radius:9px;background:#eef7fb}
 @media(max-width:800px){.map-tools{align-items:stretch;flex-direction:column}.map-tools>div{justify-content:stretch}.map-tools button{flex:1}.leaflet-control-layers{font-size:14px}}
 
 @media(prefers-reduced-motion:reduce){
