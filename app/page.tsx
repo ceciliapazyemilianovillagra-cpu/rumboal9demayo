@@ -33,6 +33,7 @@ type Referent = { id:number; full_name:string; phone:string|null; email:string|n
 type VoterImport = { id:string; file_name:string; file_size:number|null; source_format:string; status:string; detected_columns:string[]; total_rows:number; processed_rows:number; error_rows:number; created_at:string };
 type Voter = { id:number; dni:string; full_name:string; address:string|null; circuit:string|null; polling_place:string|null; contact_status:string; assigned_to:string|null; source_data:Record<string,unknown> };
 type AuditItem = { id:number; entity_type:string; entity_id:string; action:string; details:Record<string,unknown>; created_at:string; actor_id:string|null };
+type NotificationRead = { id:string; organization_id:string; user_id:string; notification_id:string; read_at:string };
 type CampaignRecord = { id:string; organization_id:string; title:string; status:string; priority:string; responsible_user_id:string|null; scheduled_for:string|null; location:string|null; notes:string|null; created_at:string };
 type Invitation = { id:string; organization_id:string; full_name:string; email:string; team_id:string|null; role:Role; allowed_modules:string[]; status:"pending"|"used"|"revoked"; expires_at_ms:number; created_at:string };
 const configurableModules=[["votantes","Votantes"],["sedes","Sedes"],["presupuesto","Presupuesto"],["gestion","Reclamos y proyectos"],["agenda","Agenda"],["propuestas","Propuestas"],["territorio","Territorio y referentes"],["tareas","Tareas y responsables"],["operativos","Operativos territoriales"],["eventos","Eventos y asistencia"],["comunicacion","Comunicación"],["logistica","Logística"],["fiscalizacion","Fiscalización electoral"]] as const;
@@ -705,6 +706,7 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
   const [voters,setVoters]=useState<Voter[]>([]);
   const [voterImports, setVoterImports] = useState<VoterImport[]>([]);
   const [auditItems, setAuditItems] = useState<AuditItem[]>([]);
+  const [notificationReads,setNotificationReads]=useState<NotificationRead[]>([]);
   const [campaignRecords,setCampaignRecords]=useState<Record<keyof typeof campaignModuleConfig,CampaignRecord[]>>({tareas:[],operativos:[],eventos:[],comunicacion:[],logistica:[],fiscalizacion:[]});
   const [menuOpen,setMenuOpen]=useState(false);
   const [bellOpen,setBellOpen]=useState(false);
@@ -758,7 +760,7 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
   }, [profile.is_platform_admin]);
   const loadContext = useCallback(async () => {
     if (!organizationId) return;
-    const [teamResult, memberResult, sedeResult, budgetResult, claimResult, projectResult, proposalResult, activityResult, referentResult,voterResult,importResult,auditResult,...campaignResults] = await Promise.all([
+    const [teamResult, memberResult, sedeResult, budgetResult, claimResult, projectResult, proposalResult, activityResult, referentResult,voterResult,importResult,auditResult,notificationReadResult,...campaignResults] = await Promise.all([
       supabase.from("teams").select("*").eq("organization_id", organizationId).eq("active", true).order("name"),
       supabase.from("memberships").select("organization_id,user_id,team_id,role,active,allowed_modules,profiles(id,full_name,active)").eq("organization_id", organizationId),
       supabase.from("headquarters").select("id,name,address,circuit,phone,team_id,responsible_user_id,active,latitude,longitude").eq("organization_id", organizationId).eq("active", true).order("name"),
@@ -771,6 +773,7 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
       supabase.from("voters").select("id,dni,full_name,address,circuit,polling_place,contact_status,assigned_to,source_data").eq("organization_id",organizationId).order("full_name").limit(500),
       supabase.from("voter_imports").select("*").eq("organization_id",organizationId).order("created_at",{ascending:false}).limit(25),
       supabase.from("audit_log").select("id,entity_type,entity_id,action,details,created_at,actor_id").eq("organization_id",organizationId).order("created_at",{ascending:false}).limit(50),
+      supabase.from("notification_reads").select("*").eq("user_id",profile.id).limit(500),
       ...Object.values(campaignModuleConfig).map(config=>supabase.from(config.collection).select("*").eq("organization_id",organizationId).order("created_at",{ascending:false}).limit(300)),
     ]);
     setTeams((teamResult.data ?? []) as Team[]);
@@ -785,10 +788,11 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
     setVoters(voterResult.error?[]:(voterResult.data??[]) as Voter[]);
     setVoterImports(importResult.error?[]:(importResult.data??[]) as VoterImport[]);
     setAuditItems(auditResult.error?[]:(auditResult.data??[]) as AuditItem[]);
+    setNotificationReads(notificationReadResult.error?[]:((notificationReadResult.data??[]) as NotificationRead[]).filter(item=>item.organization_id===organizationId));
     const campaignKeys=Object.keys(campaignModuleConfig) as (keyof typeof campaignModuleConfig)[];
     setCampaignRecords(Object.fromEntries(campaignKeys.map((key,index)=>[key,campaignResults[index]?.error?[]:(campaignResults[index]?.data??[]) as CampaignRecord[]])) as Record<keyof typeof campaignModuleConfig,CampaignRecord[]>);
     setContextLoading(false);
-  }, [organizationId]);
+  }, [organizationId,profile.id]);
   useEffect(() => {
     const timer = window.setTimeout(() => void loadOrganizations(), 0);
     return () => window.clearTimeout(timer);
@@ -828,14 +832,28 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
   const notifications=[
     ...claims.filter(c=>c.priority==="urgente"&&!["resuelto","cerrado"].includes(c.status)).map(c=>({id:`c${c.id}`,title:"Reclamo urgente",text:c.title,module:"gestion"})),
     ...projects.filter(p=>p.due_date&&new Date(`${p.due_date}T23:59:59`).getTime()<currentTime&&!["completado","cancelado"].includes(p.status)).map(p=>({id:`p${p.id}`,title:"Proyecto vencido",text:p.name,module:"gestion"})),
-    ...activities.filter(a=>{const diff=new Date(a.starts_at).getTime()-currentTime;return diff>=0&&diff<=86400000&&!["realizada","cancelada"].includes(a.status)}).map(a=>({id:`a${a.id}`,title:"Actividad próxima",text:a.title,module:"agenda"}))
+    ...activities.filter(a=>{const diff=new Date(a.starts_at).getTime()-currentTime;return diff>=0&&diff<=86400000&&!["realizada","cancelada"].includes(a.status)}).map(a=>({id:`a${a.id}`,title:"Actividad próxima",text:a.title,module:"agenda"})),
+    ...campaignRecords.tareas.filter(item=>item.scheduled_for&&new Date(item.scheduled_for).getTime()<currentTime&&!["completada","cancelada"].includes(item.status)).map(item=>({id:`t${item.id}`,title:"Tarea vencida",text:item.title,module:"tareas"})),
+    ...campaignRecords.operativos.filter(item=>item.scheduled_for&&new Date(item.scheduled_for).getTime()-currentTime>=0&&new Date(item.scheduled_for).getTime()-currentTime<=86400000).map(item=>({id:`o${item.id}`,title:"Operativo próximo",text:item.title,module:"operativos"}))
   ].slice(0,20);
+  const readIds=new Set(notificationReads.map(item=>item.notification_id));
+  const unreadNotifications=notifications.filter(item=>!readIds.has(item.id));
+  async function markNotificationRead(notificationId:string){
+    if(readIds.has(notificationId))return;
+    await supabase.from("notification_reads").insert({id:`${organization.id}_${profile.id}_${notificationId}`,organization_id:organization.id,user_id:profile.id,notification_id:notificationId,read_at:new Date().toISOString()});
+    setNotificationReads(current=>[...current,{id:`${organization.id}_${profile.id}_${notificationId}`,organization_id:organization.id,user_id:profile.id,notification_id:notificationId,read_at:new Date().toISOString()}]);
+  }
+  async function markAllNotificationsRead(){
+    const now=new Date().toISOString();
+    await Promise.all(unreadNotifications.map(item=>supabase.from("notification_reads").insert({id:`${organization.id}_${profile.id}_${item.id}`,organization_id:organization.id,user_id:profile.id,notification_id:item.id,read_at:now})));
+    setNotificationReads(current=>[...current,...unreadNotifications.map(item=>({id:`${organization.id}_${profile.id}_${item.id}`,organization_id:organization.id,user_id:profile.id,notification_id:item.id,read_at:now}))]);
+  }
   return <main className="app-shell" style={{"--navy":organization.primary_color,"--sun":organization.accent_color} as React.CSSProperties}>
     <header className="topbar">
       <div className="topbar-brand"><button className="menu-trigger" aria-label="Abrir menú" aria-expanded={menuOpen} onClick={()=>setMenuOpen(true)}>☰</button><Logo compact /><span className="topbar-live"><i/> CENTRO OPERATIVO</span></div>
-      <div className="topbar-actions"><button className="bell-button" aria-label={`Notificaciones: ${notifications.length}`} aria-expanded={bellOpen} onClick={()=>setBellOpen(!bellOpen)}>🔔{notifications.length>0&&<b>{notifications.length}</b>}</button><button className="profile" onClick={() => void supabase.auth.signOut()} title="Cerrar sesión"><span>{initials}</span><b>{profile.full_name}</b><em>{roleLabels[orgRole]}</em><small>Salir</small></button></div>
+      <div className="topbar-actions"><button className="bell-button" aria-label={`Notificaciones sin leer: ${unreadNotifications.length}`} aria-expanded={bellOpen} onClick={()=>setBellOpen(!bellOpen)}>🔔{unreadNotifications.length>0&&<b>{unreadNotifications.length}</b>}</button><button className="profile" onClick={() => void supabase.auth.signOut()} title="Cerrar sesión"><span>{initials}</span><b>{profile.full_name}</b><em>{roleLabels[orgRole]}</em><small>Salir</small></button></div>
     </header>
-    {bellOpen&&<aside className="notification-panel"><div><strong>Notificaciones</strong><button onClick={()=>setBellOpen(false)}>×</button></div>{notifications.length===0?<Empty title="Todo al día" text="No hay avisos urgentes ni vencimientos cercanos."/>:notifications.map(item=><button key={item.id} onClick={()=>{go(item.module);setBellOpen(false)}}><i/><span><b>{item.title}</b><small>{item.text}</small></span></button>)}</aside>}
+    {bellOpen&&<aside className="notification-panel"><div><span><strong>Notificaciones</strong><small>{unreadNotifications.length} sin leer</small></span><button onClick={()=>setBellOpen(false)}>×</button></div>{unreadNotifications.length>0&&<button className="notification-read-all" onClick={()=>void markAllNotificationsRead()}>✓ Marcar todas como leídas</button>}{notifications.length===0?<Empty title="Todo al día" text="No hay avisos urgentes ni vencimientos cercanos."/>:notifications.map(item=><button className={readIds.has(item.id)?"is-read":""} key={item.id} onClick={()=>{void markNotificationRead(item.id);go(item.module);setBellOpen(false)}}><i/><span><b>{item.title}</b><small>{item.text}</small></span></button>)}</aside>}
     <div className="page module-stage" key={active}>
       {active === "inicio" && <HomeDashboard organization={organization} organizations={organizations} canAdmin={canAdmin} selectOrganization={setOrganizationId} teams={teams} members={members} headquarters={headquarters} entries={entries} claims={claims} projects={projects} activities={activities} referents={referents} voters={voters} go={go} />}
       {active === "votantes" && <VotersView user={session.user} organization={organization} items={voterImports} voters={voters} reload={loadContext}/>}
