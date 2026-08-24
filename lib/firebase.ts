@@ -79,6 +79,28 @@ function compareValues(left: unknown, right: unknown) {
   return String(left).localeCompare(String(right), "es", { numeric: true, sensitivity: "base" });
 }
 
+async function recordAudit(table: string, action: "crear" | "modificar" | "eliminar", records: Record<string, unknown>[]) {
+  if (table === "audit_log" || table === "notification_reads" || !firebaseAuth.currentUser) return;
+  const changedFields = records.flatMap(record => Object.keys(record)).filter((field, index, all) =>
+    !["created_at", "updated_at"].includes(field) && all.indexOf(field) === index,
+  );
+  await Promise.all(records.map(async record => {
+    const organizationId = String(record.organization_id ?? "");
+    if (!organizationId) return;
+    try {
+      await addDoc(collection(firestore, "audit_log"), {
+        organization_id: organizationId,
+        actor_id: firebaseAuth.currentUser!.uid,
+        entity_type: table,
+        entity_id: String(record.id ?? "varios"),
+        action,
+        details: { changed_fields: changedFields, record_count: records.length },
+        created_at: new Date().toISOString(),
+      });
+    } catch { /* La operación principal no debe fallar si el historial no está disponible. */ }
+  }));
+}
+
 class FirebaseQueryBuilder implements PromiseLike<QueryResult> {
   private mode: Mode = "select";
   private filters: Filter[] = [];
@@ -152,6 +174,7 @@ class FirebaseQueryBuilder implements PromiseLike<QueryResult> {
             created.push({ id: reference.id, ...value });
           }
         }
+        await recordAudit(this.table, "crear", created);
         return { data: this.wantsSingle ? (created[0] ?? null) : created, error: null };
       }
 
@@ -161,10 +184,14 @@ class FirebaseQueryBuilder implements PromiseLike<QueryResult> {
         const batch = writeBatch(firestore);
         snapshots.forEach(snapshot => batch.update(snapshot.ref, value));
         await batch.commit();
-        return { data: snapshots.map(snapshot => ({ id: snapshot.id, ...snapshot.data(), ...value })), error: null };
+        const updated = snapshots.map(snapshot => ({ id: snapshot.id, ...snapshot.data(), ...value }));
+        await recordAudit(this.table, "modificar", updated);
+        return { data: updated, error: null };
       }
       if (this.mode === "delete") {
+        const removed = snapshots.map(snapshot => ({ id: snapshot.id, ...snapshot.data() }));
         await Promise.all(snapshots.map(snapshot => deleteDoc(snapshot.ref)));
+        await recordAudit(this.table, "eliminar", removed);
         return { data: null, error: null };
       }
 

@@ -132,8 +132,19 @@ service cloud.firestore {
     }
     match /audit_log/{id} {
       allow read: if manager(resource.data.organization_id);
-      allow create: if member(request.resource.data.organization_id);
+      allow create: if member(request.resource.data.organization_id) &&
+        request.resource.data.actor_id == request.auth.uid &&
+        request.resource.data.entity_type is string &&
+        request.resource.data.entity_id is string &&
+        request.resource.data.action in ["crear", "modificar", "eliminar"];
       allow update, delete: if false;
+    }
+    match /notification_reads/{id} {
+      allow read: if signedIn() && resource.data.user_id == request.auth.uid;
+      allow create, update: if signedIn() &&
+        request.resource.data.user_id == request.auth.uid &&
+        member(request.resource.data.organization_id);
+      allow delete: if signedIn() && resource.data.user_id == request.auth.uid;
     }
     match /campaign_tasks/{id} {
       allow read: if moduleAccess(resource.data.organization_id, "tareas");

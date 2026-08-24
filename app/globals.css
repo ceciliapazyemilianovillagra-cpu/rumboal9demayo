@@ -2084,6 +2084,17 @@ textarea{min-height:116px}
   .panel{padding-left:14px;padding-right:14px}
 }
 
+.notification-panel>div:first-child span small{display:block;color:var(--muted);font-size:12px;margin-top:2px}
+.notification-panel>.notification-read-all{display:block;border:0;background:var(--sky-soft);color:var(--navy);border-radius:10px;text-align:center;font-weight:800;margin:0 0 8px;padding:10px}
+.notification-panel>button.is-read{opacity:.58}
+.notification-panel>button.is-read i{background:#a9b1bb}
+.map-tools{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:2px 3px}
+.map-tools>span{font-size:13px;color:var(--muted)}
+.map-tools>div{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
+.map-tools button{border:1px solid var(--line);background:#fff;color:var(--navy);border-radius:10px;padding:9px 12px;font-size:12px;font-weight:800;transition:.2s}
+.map-tools button:hover{background:var(--sky-soft);transform:translateY(-1px)}
+@media(max-width:800px){.map-tools{align-items:stretch;flex-direction:column}.map-tools>div{justify-content:stretch}.map-tools button{flex:1}.leaflet-control-layers{font-size:14px}}
+
 @media(prefers-reduced-motion:reduce){
   html{scroll-behavior:auto}
   .module-stage,.stat-card,.metric-spark i,.metric-progress>i,.topbar-live i,.hero-status i,.loading-screen .logo-lockup img,.splash-progress i{
