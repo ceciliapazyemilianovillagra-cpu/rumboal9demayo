@@ -6,6 +6,8 @@ import { HttpsError, onCall } from "firebase-functions/v2/https";
 initializeApp();
 
 const db = getFirestore();
+const VALID_ROLES = ["admin", "coordinacion", "territorio", "finanzas", "consulta"];
+const VALID_MODULES = ["votantes", "sedes", "presupuesto", "gestion", "agenda", "propuestas", "territorio", "tareas", "operativos", "eventos", "comunicacion", "logistica", "fiscalizacion"];
 
 async function canManage(uid: string, organizationId: string) {
   const [profile, membership] = await Promise.all([
@@ -31,9 +33,11 @@ export const invite_team_member = onCall({ region: "southamerica-east1" }, async
   }
 
   const email = String(request.data.email ?? "").trim().toLowerCase();
-  const fullName = String(request.data.full_name ?? "").trim();
+  const fullName = String(request.data.full_name ?? "").trim().slice(0, 120);
   const role = String(request.data.role ?? "consulta");
-  if (!email || !fullName) throw new HttpsError("invalid-argument", "Nombre y correo son obligatorios.");
+  if (!/^\S+@\S+\.\S+$/.test(email) || !fullName || email.length > 254 || !VALID_ROLES.includes(role)) {
+    throw new HttpsError("invalid-argument", "Nombre, correo o rol inválidos.");
+  }
 
   let user;
   try {
@@ -42,7 +46,10 @@ export const invite_team_member = onCall({ region: "southamerica-east1" }, async
     user = await getAuth().createUser({ email, displayName: fullName, disabled: false });
   }
 
-  const allowedModules = Array.isArray(request.data.allowed_modules) ? request.data.allowed_modules : [];
+  const allowedModules = Array.isArray(request.data.allowed_modules) ?
+    request.data.allowed_modules.map(String).filter((moduleId: string) => VALID_MODULES.includes(moduleId)) : [];
+  const teamId = request.data.team_id ? String(request.data.team_id).slice(0, 160) : null;
+  const active = request.data.active !== false;
   const batch = db.batch();
   batch.set(db.doc(`profiles/${user.uid}`), {
     full_name: fullName,
@@ -55,8 +62,9 @@ export const invite_team_member = onCall({ region: "southamerica-east1" }, async
   batch.set(db.doc(`memberships/${organizationId}_${user.uid}`), {
     organization_id: organizationId,
     user_id: user.uid,
+    team_id: teamId,
     role,
-    active: true,
+    active,
     allowed_modules: allowedModules,
     updated_at: FieldValue.serverTimestamp(),
   }, { merge: true });

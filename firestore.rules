@@ -18,7 +18,12 @@ service cloud.firestore {
 
     match /profiles/{uid} {
       allow read: if signedIn();
-      allow update: if request.auth.uid == uid || platformAdmin();
+      allow update: if platformAdmin() || (
+        request.auth.uid == uid &&
+        request.resource.data.is_platform_admin == resource.data.is_platform_admin &&
+        request.resource.data.role == resource.data.role &&
+        request.resource.data.active == resource.data.active
+      );
       allow create: if platformAdmin() || (
         signedIn() && request.auth.uid == uid &&
         request.auth.token.email == "emilianovillagra@gmail.com" &&
@@ -92,6 +97,36 @@ service cloud.firestore {
       allow read: if manager(resource.data.organization_id);
       allow create: if member(request.resource.data.organization_id);
       allow update, delete: if false;
+    }
+    match /campaign_tasks/{id} {
+      allow read: if moduleAccess(resource.data.organization_id, "tareas");
+      allow create: if moduleAccess(request.resource.data.organization_id, "tareas");
+      allow update, delete: if moduleAccess(resource.data.organization_id, "tareas");
+    }
+    match /field_operations/{id} {
+      allow read: if moduleAccess(resource.data.organization_id, "operativos");
+      allow create: if moduleAccess(request.resource.data.organization_id, "operativos");
+      allow update, delete: if moduleAccess(resource.data.organization_id, "operativos");
+    }
+    match /campaign_events/{id} {
+      allow read: if moduleAccess(resource.data.organization_id, "eventos");
+      allow create: if moduleAccess(request.resource.data.organization_id, "eventos");
+      allow update, delete: if moduleAccess(resource.data.organization_id, "eventos");
+    }
+    match /communications/{id} {
+      allow read: if moduleAccess(resource.data.organization_id, "comunicacion");
+      allow create: if moduleAccess(request.resource.data.organization_id, "comunicacion");
+      allow update, delete: if moduleAccess(resource.data.organization_id, "comunicacion");
+    }
+    match /logistics_items/{id} {
+      allow read: if moduleAccess(resource.data.organization_id, "logistica");
+      allow create: if moduleAccess(request.resource.data.organization_id, "logistica");
+      allow update, delete: if moduleAccess(resource.data.organization_id, "logistica");
+    }
+    match /election_day_assignments/{id} {
+      allow read: if moduleAccess(resource.data.organization_id, "fiscalizacion");
+      allow create: if moduleAccess(request.resource.data.organization_id, "fiscalizacion");
+      allow update, delete: if moduleAccess(resource.data.organization_id, "fiscalizacion");
     }
     match /{collectionName}/{id} {
       allow read: if resource.data.organization_id != null && member(resource.data.organization_id);

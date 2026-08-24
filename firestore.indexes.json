@@ -12,6 +12,12 @@
     { "collectionGroup": "voters", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "organization_id", "order": "ASCENDING" }, { "fieldPath": "full_name", "order": "ASCENDING" }] },
     { "collectionGroup": "voter_imports", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "organization_id", "order": "ASCENDING" }, { "fieldPath": "created_at", "order": "DESCENDING" }] },
     { "collectionGroup": "audit_log", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "organization_id", "order": "ASCENDING" }, { "fieldPath": "created_at", "order": "DESCENDING" }] }
+    ,{ "collectionGroup": "campaign_tasks", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "organization_id", "order": "ASCENDING" }, { "fieldPath": "created_at", "order": "DESCENDING" }] }
+    ,{ "collectionGroup": "field_operations", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "organization_id", "order": "ASCENDING" }, { "fieldPath": "created_at", "order": "DESCENDING" }] }
+    ,{ "collectionGroup": "campaign_events", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "organization_id", "order": "ASCENDING" }, { "fieldPath": "created_at", "order": "DESCENDING" }] }
+    ,{ "collectionGroup": "communications", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "organization_id", "order": "ASCENDING" }, { "fieldPath": "created_at", "order": "DESCENDING" }] }
+    ,{ "collectionGroup": "logistics_items", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "organization_id", "order": "ASCENDING" }, { "fieldPath": "created_at", "order": "DESCENDING" }] }
+    ,{ "collectionGroup": "election_day_assignments", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "organization_id", "order": "ASCENDING" }, { "fieldPath": "created_at", "order": "DESCENDING" }] }
   ],
   "fieldOverrides": []
 }

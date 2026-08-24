@@ -2,10 +2,12 @@ import { getApp, getApps, initializeApp } from "firebase/app";
 import {
   browserLocalPersistence,
   getAuth,
+  GoogleAuthProvider,
   onAuthStateChanged,
   sendPasswordResetEmail,
   setPersistence,
   signInWithEmailAndPassword,
+  signInWithPopup,
   signOut,
   type User as FirebaseUser,
 } from "firebase/auth";
@@ -41,6 +43,8 @@ export const firebaseApp = getApps().length ? getApp() : initializeApp(firebaseC
 export const firebaseAuth = getAuth(firebaseApp);
 export const firestore = getFirestore(firebaseApp);
 const functions = getFunctions(firebaseApp, "southamerica-east1");
+const googleProvider = new GoogleAuthProvider();
+googleProvider.setCustomParameters({ prompt: "select_account" });
 
 if (typeof window !== "undefined") {
   void setPersistence(firebaseAuth, browserLocalPersistence).catch(() => undefined);
@@ -189,6 +193,10 @@ export const firebase = {
       try { await signInWithEmailAndPassword(firebaseAuth, email, password); return { error: null }; }
       catch (cause) { return { error: cause instanceof Error ? cause : new Error("No se pudo ingresar") }; }
     },
+    async signInWithGoogle() {
+      try { await signInWithPopup(firebaseAuth, googleProvider); return { error: null }; }
+      catch (cause) { return { error: cause instanceof Error ? cause : new Error("No se pudo ingresar con Google") }; }
+    },
     async resetPasswordForEmail(email: string, options?: { redirectTo?: string }) {
       try { await sendPasswordResetEmail(firebaseAuth, email, options?.redirectTo ? { url: options.redirectTo } : undefined); return { error: null }; }
       catch (cause) { return { error: cause instanceof Error ? cause : new Error("No se pudo enviar el correo") }; }
@@ -210,7 +218,8 @@ export const firebase = {
         const callable = httpsCallable<Record<string, unknown>, any>(functions, name.replaceAll("-", "_"));
         const result = await callable(body);
         if (name === "invite-team-member" && body.action !== "remove" && typeof body.email === "string") {
-          await sendPasswordResetEmail(firebaseAuth, body.email, { url: window.location.origin });
+          try { await sendPasswordResetEmail(firebaseAuth, body.email, { url: window.location.origin }); }
+          catch { /* La cuenta puede usar Google o el correo puede enviarse luego desde Recuperar contraseña. */ }
         }
         return { data: result.data, error: null };
       } catch (cause) {
