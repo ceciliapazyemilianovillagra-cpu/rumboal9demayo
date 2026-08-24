@@ -848,7 +848,8 @@ export default function Home() {
       void (async () => {
         const profileResult = await supabase.from("profiles").select("id,full_name,role,active,is_platform_admin").eq("id", session.user.id).maybeSingle();
         let currentProfile = profileResult.data as Profile | null;
-        if (!currentProfile && session.user.email?.toLowerCase() === "emilianovillagra@gmail.com") {
+        const isBootstrapAdmin = session.user.email?.toLowerCase() === "emilianovillagra@gmail.com";
+        if (!currentProfile && isBootstrapAdmin) {
           const bootstrapProfile: Profile = {
             id: session.user.id,
             full_name: "Emiliano Villagra",
@@ -857,30 +858,30 @@ export default function Home() {
             is_platform_admin: true,
           };
           const profileCreation = await supabase.from("profiles").insert(bootstrapProfile).select().single();
-          if (!profileCreation.error) {
-            const organizationId = "rumbo-al-9-de-mayo";
-            await supabase.from("organizations").insert({
-              id: organizationId,
-              name: "Equipo Ernesto Nagle",
-              candidate_name: "Ernesto Nagle",
-              position_sought: "Legislador provincial",
-              slug: "ernesto-nagle",
-              primary_color: "#182554",
-              accent_color: "#f4a640",
-              active: true,
-              plan_name: "Campaña completa",
-              license_status: "active",
-            });
-            await supabase.from("memberships").insert({
-              organization_id: organizationId,
-              user_id: session.user.id,
-              team_id: null,
-              role: "admin",
-              active: true,
-              allowed_modules: configurableModules.map(([id]) => id),
-            });
-            currentProfile = bootstrapProfile;
-          }
+          if (!profileCreation.error) currentProfile = bootstrapProfile;
+        }
+        if (currentProfile?.is_platform_admin && isBootstrapAdmin) {
+          const organizationId = "rumbo-al-9-de-mayo";
+          await supabase.from("organizations").insert({
+            id: organizationId,
+            name: "Equipo Ernesto Nagle",
+            candidate_name: "Ernesto Nagle",
+            position_sought: "Legislador provincial",
+            slug: "ernesto-nagle",
+            primary_color: "#182554",
+            accent_color: "#f4a640",
+            active: true,
+            plan_name: "Campaña completa",
+            license_status: "active",
+          });
+          await supabase.from("memberships").insert({
+            organization_id: organizationId,
+            user_id: session.user.id,
+            team_id: null,
+            role: "admin",
+            active: true,
+            allowed_modules: configurableModules.map(([id]) => id),
+          });
         }
         setProfile(currentProfile);
         setLoading(false);
