@@ -447,7 +447,9 @@ function AdminView({ profile, organization, organizations, teams, members, refer
     }).select().single();
     if (error || !org) return setMessage("No se pudo crear el espacio político.");
     const { data: team } = await supabase.from("teams").insert({ organization_id: org.id, name: "Equipo central", description: "Coordinación general" }).select().single();
-    await supabase.from("memberships").insert({ organization_id: org.id, user_id: profile.id, team_id: team?.id ?? null, role: "admin" });
+    if (!profile.is_platform_admin) {
+      await supabase.from("memberships").insert({ organization_id: org.id, user_id: profile.id, team_id: team?.id ?? null, role: "admin" });
+    }
     form.reset(); setOrgOpen(false); await reloadAll(); selectOrganization(org.id);
   }
   async function saveBrand(event:FormEvent<HTMLFormElement>){
@@ -725,11 +727,13 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
   const canAdmin = profile.is_platform_admin || orgRole === "admin";
 
   const loadOrganizations = useCallback(async () => {
-    const { data } = await supabase.from("organizations").select("*").eq("active", true).order("name");
+    const organizationsQuery = supabase.from("organizations").select("*");
+    if (!profile.is_platform_admin) organizationsQuery.eq("active", true);
+    const { data } = await organizationsQuery.order("name");
     const list = (data ?? []) as Organization[]; setOrganizations(list);
     setOrganizationId((current) => current && list.some((org) => org.id === current) ? current : list[0]?.id ?? "");
     if(list.length===0)setContextLoading(false);
-  }, []);
+  }, [profile.is_platform_admin]);
   const loadContext = useCallback(async () => {
     if (!organizationId) return;
     const [teamResult, memberResult, sedeResult, budgetResult, claimResult, projectResult, proposalResult, activityResult, referentResult,voterResult,importResult,auditResult] = await Promise.all([
@@ -874,14 +878,10 @@ export default function Home() {
             plan_name: "Campaña completa",
             license_status: "active",
           });
-          await supabase.from("memberships").insert({
-            organization_id: organizationId,
-            user_id: session.user.id,
-            team_id: null,
-            role: "admin",
-            active: true,
-            allowed_modules: configurableModules.map(([id]) => id),
-          });
+          // El administrador de plataforma administra todos los espacios sin pertenecer a sus equipos.
+          await supabase.from("memberships").delete()
+            .eq("organization_id", organizationId)
+            .eq("user_id", session.user.id);
         }
         setProfile(currentProfile);
         setLoading(false);
