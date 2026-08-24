@@ -96,9 +96,9 @@ service cloud.firestore {
       allow update, delete: if moduleAccess(resource.data.organization_id, "agenda");
     }
     match /headquarters/{id} {
-      allow read: if moduleAccess(resource.data.organization_id, "sedes");
-      allow create: if moduleAccess(request.resource.data.organization_id, "sedes");
-      allow update, delete: if moduleAccess(resource.data.organization_id, "sedes");
+      allow read: if moduleAccess(resource.data.organization_id, "sedes") || moduleAccess(resource.data.organization_id, "territorio");
+      allow create: if moduleAccess(request.resource.data.organization_id, "sedes") || moduleAccess(request.resource.data.organization_id, "territorio");
+      allow update, delete: if moduleAccess(resource.data.organization_id, "sedes") || moduleAccess(resource.data.organization_id, "territorio");
     }
     match /teams/{id} {
       allow read: if moduleAccess(resource.data.organization_id, "sedes");

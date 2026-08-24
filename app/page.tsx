@@ -70,9 +70,10 @@ function activitiesForDate(items:Activity[],selectedDate:string) {
   return items.filter(item=>dateKey(new Date(item.starts_at))===selectedDate);
 }
 
-function LocationInputs() {
-  const [coordinates,setCoordinates]=useState({latitude:"",longitude:""});
+function LocationInputs({initialLocation}:{initialLocation?:{latitude:number;longitude:number}|null}) {
+  const [coordinates,setCoordinates]=useState({latitude:initialLocation?.latitude.toFixed(7)??"",longitude:initialLocation?.longitude.toFixed(7)??""});
   const [message,setMessage]=useState("");
+  useEffect(()=>{if(initialLocation){setCoordinates({latitude:initialLocation.latitude.toFixed(7),longitude:initialLocation.longitude.toFixed(7)});setMessage("Ubicación seleccionada en el mapa.");}},[initialLocation]);
   function locate(){
     if(!navigator.geolocation)return setMessage("Este dispositivo no permite obtener la ubicación.");
     setMessage("Buscando ubicación...");
@@ -82,7 +83,7 @@ function LocationInputs() {
       {enableHighAccuracy:true,timeout:12000}
     );
   }
-  return <div className="location-fields"><input type="hidden" name="latitude" value={coordinates.latitude}/><input type="hidden" name="longitude" value={coordinates.longitude}/><button type="button" onClick={locate}>⌖ Usar ubicación actual</button>{message&&<small>{message}</small>}</div>;
+  return <div className="location-fields"><input type="hidden" name="latitude" value={coordinates.latitude}/><input type="hidden" name="longitude" value={coordinates.longitude}/><button type="button" onClick={locate}>⌖ Usar ubicación actual</button>{coordinates.latitude&&<b>{coordinates.latitude}, {coordinates.longitude}</b>}{message&&<small>{message}</small>}</div>;
 }
 
 function PdfButton({organization,title,columns,rows}:{organization:Organization;title:string;columns:string[];rows:string[][]}){
@@ -222,11 +223,12 @@ function Budget({ user, organization, entries, reload }: {
   </section>;
 }
 
-function HeadquartersView({ organization, teams, members, items, reload }: {
-  organization: Organization; teams: Team[]; members: Member[]; items: Headquarters[]; reload: () => Promise<void>;
+function HeadquartersView({ organization, teams, members, items, reload, initialLocation=null, embedded=false }: {
+  organization: Organization; teams: Team[]; members: Member[]; items: Headquarters[]; reload: () => Promise<void>; initialLocation?:{latitude:number;longitude:number}|null; embedded?:boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [message, setMessage] = useState("");
+  useEffect(()=>{if(initialLocation){setOpen(true);window.setTimeout(()=>document.getElementById("headquarters-entry-form")?.scrollIntoView({behavior:"smooth",block:"center"}),80);}},[initialLocation]);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); const form = event.currentTarget; const data = new FormData(form);
     const { error } = await supabase.from("headquarters").insert({
@@ -239,10 +241,10 @@ function HeadquartersView({ organization, teams, members, items, reload }: {
     else { form.reset(); setOpen(false); await reload(); }
   }
   return <section>
-    <ModuleTitle kicker="PRESENCIA TERRITORIAL" title="Sedes" subtitle="Cada sede queda vinculada a un equipo y a una persona responsable.">
+    <ModuleTitle kicker="PRESENCIA TERRITORIAL" title={embedded?"Sedes en el territorio":"Sedes"} subtitle={embedded?"Creá una sede desde aquí o seleccioná primero su punto exacto en el mapa.":"Cada sede queda vinculada a un equipo y a una persona responsable."}>
       <button className="primary compact" onClick={() => setOpen(!open)}>＋ Nueva sede</button>
     </ModuleTitle>
-    {open && <form className="entry-form panel" onSubmit={submit}>
+    {open && <form id="headquarters-entry-form" className="entry-form panel" onSubmit={submit}>
       <div className="form-head"><div><p className="kicker">NUEVA SEDE</p><h2>Datos del lugar</h2></div><button type="button" onClick={() => setOpen(false)}>×</button></div>
       <div className="form-grid">
         <label className="wide">Nombre<input name="name" required placeholder="Sede Barrio Norte" /></label>
@@ -251,7 +253,7 @@ function HeadquartersView({ organization, teams, members, items, reload }: {
         <label>Teléfono<input name="phone" placeholder="Opcional" /></label>
         <label>Equipo<select name="team_id"><option value="">Sin asignar</option>{teams.map((t) => <option value={t.id} key={t.id}>{t.name}</option>)}</select></label>
         <label>Responsable<select name="responsible_user_id"><option value="">Sin asignar</option>{members.map((m) => <option value={m.user_id} key={m.user_id}>{m.profiles?.full_name}</option>)}</select></label>
-        <LocationInputs/>
+        <LocationInputs initialLocation={initialLocation}/>
       </div>
       {message && <p className="form-message">{message}</p>}
       <div className="form-actions"><button type="button" onClick={() => setOpen(false)}>Cancelar</button><button className="primary compact">Crear sede</button></div>
@@ -710,6 +712,7 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
   const [campaignRecords,setCampaignRecords]=useState<Record<keyof typeof campaignModuleConfig,CampaignRecord[]>>({tareas:[],operativos:[],eventos:[],comunicacion:[],logistica:[],fiscalizacion:[]});
   const [menuOpen,setMenuOpen]=useState(false);
   const [bellOpen,setBellOpen]=useState(false);
+  const [headquartersMapLocation,setHeadquartersMapLocation]=useState<{latitude:number;longitude:number}|null>(null);
   const [notice, setNotice] = useState("");
   const [contextLoading,setContextLoading]=useState(true);
   const territoryPoints = useMemo<MapPoint[]>(() => [
@@ -862,7 +865,7 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
       {active === "gestion" && <ManagementView user={session.user} organization={organization} teams={teams} members={members} headquarters={headquarters} claims={claims} projects={projects} reload={loadContext} />}
       {active === "propuestas" && <ProposalsView user={session.user} organization={organization} members={members} claims={claims} projects={projects} items={proposals} reload={loadContext}/>}
       {active === "agenda" && <AgendaView user={session.user} organization={organization} teams={teams} members={members} headquarters={headquarters} items={activities} reload={loadContext}/>}
-      {active === "territorio" && <><ModuleTitle kicker="TERRITORIO EN TIEMPO REAL" title="Mapa de campaña" subtitle="Filtrá sedes, reclamos y referentes; tocá cada punto para ver su información."/><article className="panel territory-map-panel territory-map-primary"><PanelHead kicker="LEAFLET · MAPA DE CALLES" title="Cobertura territorial" aside={`${territoryPoints.length} ubicaciones`}/><TerritoryMap points={territoryPoints}/></article><TerritoryView user={session.user} organization={organization} teams={teams} members={members} headquarters={headquarters} items={referents} reload={loadContext}/></>}
+      {active === "territorio" && <><ModuleTitle kicker="TERRITORIO EN TIEMPO REAL" title="Mapa de campaña" subtitle="Filtrá sedes, reclamos y referentes; tocá el mapa para crear una sede en su ubicación exacta."/><article className="panel territory-map-panel territory-map-primary"><PanelHead kicker="LEAFLET · MAPA DE CALLES" title="Cobertura territorial" aside={`${territoryPoints.length} ubicaciones`}/><TerritoryMap points={territoryPoints} onCreateHeadquarters={setHeadquartersMapLocation}/></article><HeadquartersView embedded organization={organization} teams={teams} members={members} items={headquarters} reload={loadContext} initialLocation={headquartersMapLocation}/><TerritoryView user={session.user} organization={organization} teams={teams} members={members} headquarters={headquarters} items={referents} reload={loadContext}/></>}
       {(Object.keys(campaignModuleConfig) as (keyof typeof campaignModuleConfig)[]).map(moduleId=>active===moduleId&&<CampaignModuleView key={moduleId} moduleId={moduleId} user={session.user} organization={organization} members={members} items={campaignRecords[moduleId]} reload={loadContext}/>)}
       {active === "admin" && <AdminView profile={profile} organization={organization} organizations={organizations} teams={teams} members={members} referents={referents} auditItems={auditItems} reloadAll={reloadAll} selectOrganization={setOrganizationId} />}
     </div>

@@ -16,7 +16,7 @@ export type MapPoint = {
   kind: "sede" | "reclamo" | "referente";
 };
 
-export function TerritoryMap({ points }: { points: MapPoint[] }) {
+export function TerritoryMap({ points, onCreateHeadquarters }: { points: MapPoint[]; onCreateHeadquarters?: (location:{latitude:number;longitude:number})=>void }) {
   const elementRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<LeafletMap | null>(null);
   const [visibleKinds,setVisibleKinds]=useState<MapPoint["kind"][]>(["sede","reclamo","referente"]);
@@ -90,7 +90,7 @@ export function TerritoryMap({ points }: { points: MapPoint[] }) {
       <button type="button" className="map-home" onClick={()=>mapRef.current?.setView(SAN_MIGUEL_DE_TUCUMAN,TUCUMAN_ZOOM)}>⌖ San Miguel de Tucumán</button>
     </div>
     <div className="leaflet-map" ref={elementRef} aria-label="Mapa territorial interactivo de sedes, reclamos y referentes" />
-    <div className="map-tools"><span>{mapMessage}</span><div><button type="button" onClick={locateMe}>◎ Mi ubicación</button><button type="button" onClick={fitAll}>⊙ Ver todos los puntos</button>{picked&&<button type="button" onClick={()=>void navigator.clipboard.writeText(`${picked[0].toFixed(6)}, ${picked[1].toFixed(6)}`)}>Copiar coordenada</button>}</div></div>
+    <div className="map-tools"><span>{mapMessage}</span><div><button type="button" onClick={locateMe}>◎ Mi ubicación</button><button type="button" onClick={fitAll}>⊙ Ver todos los puntos</button>{picked&&<button type="button" onClick={()=>void navigator.clipboard.writeText(`${picked[0].toFixed(6)}, ${picked[1].toFixed(6)}`)}>Copiar coordenada</button>}{picked&&onCreateHeadquarters&&<button type="button" className="map-create-headquarters" onClick={()=>onCreateHeadquarters({latitude:picked[0],longitude:picked[1]})}>＋ Crear sede aquí</button>}</div></div>
   </div>;
 }
 
