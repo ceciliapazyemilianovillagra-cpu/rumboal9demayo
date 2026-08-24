@@ -36,7 +36,7 @@ export function TerritoryMap({ points }: { points: MapPoint[] }) {
         .setView(SAN_MIGUEL_DE_TUCUMAN, TUCUMAN_ZOOM);
       mapRef.current = map;
 
-      L.tileLayer("/api/map-tiles/{z}/{x}/{y}", {
+      L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png", {
         attribution: "© OpenStreetMap contributors © CARTO",
         maxZoom: 19,
         keepBuffer: 3,

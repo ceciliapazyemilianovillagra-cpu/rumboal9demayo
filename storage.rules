@@ -1,0 +1,17 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() { return request.auth != null; }
+    function membership(orgId) {
+      return firestore.get(/databases/(default)/documents/memberships/$(orgId + "_" + request.auth.uid));
+    }
+    function member(orgId) { return signedIn() && membership(orgId).data.active == true; }
+    function manager(orgId) {
+      return member(orgId) && membership(orgId).data.role in ["admin", "coordinacion"];
+    }
+    match /organizations/{orgId}/{allPaths=**} {
+      allow read: if member(orgId);
+      allow write: if manager(orgId) && request.resource.size < 20 * 1024 * 1024;
+    }
+  }
+}

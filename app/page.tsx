@@ -1,8 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import type { Session, User } from "@supabase/supabase-js";
-import { supabase } from "../lib/supabase";
+import { firebase as supabase, type Session, type User } from "../lib/firebase";
 import { TerritoryMap, type MapPoint } from "./territory-map";
 
 type Role = "admin" | "coordinacion" | "territorio" | "finanzas" | "consulta";
@@ -34,7 +33,9 @@ type Referent = { id:number; full_name:string; phone:string|null; email:string|n
 type VoterImport = { id:string; file_name:string; file_size:number|null; source_format:string; status:string; detected_columns:string[]; total_rows:number; processed_rows:number; error_rows:number; created_at:string };
 type Voter = { id:number; dni:string; full_name:string; address:string|null; circuit:string|null; polling_place:string|null; contact_status:string; assigned_to:string|null; source_data:Record<string,unknown> };
 type AuditItem = { id:number; entity_type:string; entity_id:string; action:string; details:Record<string,unknown>; created_at:string; actor_id:string|null };
-const configurableModules=[["votantes","Votantes"],["sedes","Sedes"],["presupuesto","Presupuesto"],["gestion","Reclamos y proyectos"],["agenda","Agenda"],["propuestas","Propuestas"],["territorio","Territorio y referentes"]] as const;
+type CampaignRecord = { id:string; organization_id:string; title:string; status:string; priority:string; responsible_user_id:string|null; scheduled_for:string|null; location:string|null; notes:string|null; created_at:string };
+type Invitation = { id:string; organization_id:string; full_name:string; email:string; team_id:string|null; role:Role; allowed_modules:string[]; status:"pending"|"used"|"revoked"; expires_at_ms:number; created_at:string };
+const configurableModules=[["votantes","Votantes"],["sedes","Sedes"],["presupuesto","Presupuesto"],["gestion","Reclamos y proyectos"],["agenda","Agenda"],["propuestas","Propuestas"],["territorio","Territorio y referentes"],["tareas","Tareas y responsables"],["operativos","Operativos territoriales"],["eventos","Eventos y asistencia"],["comunicacion","Comunicación"],["logistica","Logística"],["fiscalizacion","Fiscalización electoral"]] as const;
 
 const roleLabels: Record<Role, string> = {
   admin: "Administrador", coordinacion: "Coordinación", territorio: "Territorio",
@@ -111,12 +112,15 @@ function Login() {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [inviteToken,setInviteToken]=useState("");
+  useEffect(()=>{setInviteToken(new URLSearchParams(window.location.search).get("invite")??"");},[]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     setBusy(true); setMessage("");
-    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-    if (error) setMessage("No pudimos ingresar. Revisá el correo y la contraseña.");
+    let result = inviteToken ? await supabase.auth.signUpWithPassword({ email: email.trim(), password }) : await supabase.auth.signInWithPassword({ email: email.trim(), password });
+    if (inviteToken && result.error?.message.includes("email-already-in-use")) result = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+    if (result.error) setMessage(inviteToken?"No se pudo validar la invitación. Usá el correo invitado y una contraseña de al menos 6 caracteres.":"No pudimos ingresar. Revisá el correo y la contraseña.");
     setBusy(false);
   }
 
@@ -128,6 +132,13 @@ function Login() {
     setBusy(false);
   }
 
+  async function googleLogin() {
+    setBusy(true); setMessage("");
+    const { error } = await supabase.auth.signInWithGoogle();
+    if (error) setMessage("No se pudo ingresar con Google. Verificá que uses la cuenta autorizada por tu espacio.");
+    setBusy(false);
+  }
+
   return <main className="login-shell">
     <section className="login-brand">
       <Logo />
@@ -136,12 +147,14 @@ function Login() {
       <span>Una herramienta preparada para acompañar campañas de cualquier escala.</span>
     </section>
     <form className="login-card" onSubmit={submit}>
-      <div className="login-heading"><span className="kicker">ACCESO SEGURO</span><h2>Bienvenido</h2><p>Ingresá con la cuenta asignada a tu equipo.</p></div>
+      <div className="login-heading"><span className="kicker">{inviteToken?"INVITACIÓN SEGURA":"ACCESO SEGURO"}</span><h2>{inviteToken?"Sumate a tu espacio":"Bienvenido"}</h2><p>{inviteToken?"Creá tu cuenta o ingresá con Google usando exactamente el correo invitado.":"Ingresá con la cuenta asignada a tu equipo."}</p></div>
       <label>Correo electrónico<input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="nombre@equipo.com" autoComplete="email" /></label>
       <label>Contraseña<input required type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" autoComplete="current-password" /></label>
       <div className="login-options"><span>Usuarios autorizados</span><button type="button" onClick={resetPassword}>¿Olvidaste tu contraseña?</button></div>
       {message && <p className="form-message" role="status">{message}</p>}
-      <button className="primary" disabled={busy}>{busy ? "Verificando..." : "Ingresar a la plataforma"} <span>→</span></button>
+      <button className="primary" disabled={busy}>{busy ? "Verificando..." : inviteToken?"Aceptar invitación":"Ingresar a la plataforma"} <span>→</span></button>
+      <div className="login-divider"><span>o</span></div>
+      <button className="google-login" type="button" onClick={googleLogin} disabled={busy}><b>G</b> Continuar con Google</button>
       <p className="secure-note">● Conexión protegida</p>
     </form>
   </main>;
@@ -348,6 +361,28 @@ function ProposalsView({user,organization,members,claims,projects,items,reload}:
   <article className="panel"><PanelHead kicker="BANCO DE PROPUESTAS" title="Iniciativas del espacio" aside={`${items.length} propuestas`}/>{items.length===0?<Empty title="Todavía no hay propuestas" text="Creá la primera iniciativa a partir de un problema territorial."/>:<div className="proposal-list">{items.map(p=><div key={p.id}><span>◆</span><div><strong>{p.title}</strong><small>{p.theme} · {p.beneficiaries||"Alcance a definir"}</small></div><select value={p.status} onChange={e=>changeStatus(p.id,e.target.value)}><option value="borrador">Borrador</option><option value="en_revision">En revisión</option><option value="aprobada">Aprobada</option><option value="publicada">Publicada</option><option value="archivada">Archivada</option></select></div>)}</div>}</article>{message&&<button className="toast" onClick={()=>setMessage("")}>{message}<span>×</span></button>}</section>;
 }
 
+const campaignModuleConfig={
+  tareas:{collection:"campaign_tasks",kicker:"EJECUCIÓN",title:"Tareas y responsables",subtitle:"Asigná tareas, prioridades, fechas y responsables de campaña.",singular:"tarea"},
+  operativos:{collection:"field_operations",kicker:"CALLE Y TERRITORIO",title:"Operativos territoriales",subtitle:"Planificá recorridas, timbreos, puestos, reuniones barriales y cobertura.",singular:"operativo"},
+  eventos:{collection:"campaign_events",kicker:"MOVILIZACIÓN",title:"Eventos y asistencia",subtitle:"Organizá actos, reuniones, capacitaciones, invitados y asistencia.",singular:"evento"},
+  comunicacion:{collection:"communications",kicker:"MENSAJE DE CAMPAÑA",title:"Comunicación y contenidos",subtitle:"Coordiná redes, prensa, piezas, publicaciones y aprobaciones.",singular:"contenido"},
+  logistica:{collection:"logistics_items",kicker:"RECURSOS",title:"Logística y materiales",subtitle:"Controlá vehículos, cartelería, sonido, combustible, insumos y entregas.",singular:"recurso"},
+  fiscalizacion:{collection:"election_day_assignments",kicker:"DÍA ELECTORAL",title:"Fiscalización y mesas",subtitle:"Prepará escuelas, mesas, fiscales, responsables, incidencias y cobertura.",singular:"asignación"},
+} as const;
+
+function CampaignModuleView({moduleId,user,organization,members,items,reload}:{moduleId:keyof typeof campaignModuleConfig;user:User;organization:Organization;members:Member[];items:CampaignRecord[];reload:()=>Promise<void>}){
+  const config=campaignModuleConfig[moduleId],[open,setOpen]=useState(false),[message,setMessage]=useState("");
+  const pending=items.filter(item=>!["completado","realizado","cerrado","publicado"].includes(item.status)).length;
+  async function submit(event:FormEvent<HTMLFormElement>){event.preventDefault();const form=event.currentTarget,data=new FormData(form);const {error}=await supabase.from(config.collection).insert({organization_id:organization.id,title:String(data.get("title")||"").trim(),status:data.get("status"),priority:data.get("priority"),responsible_user_id:data.get("responsible_user_id")||null,scheduled_for:data.get("scheduled_for")||null,location:data.get("location")||null,notes:data.get("notes")||null,created_by:user.id});if(error)setMessage(`No se pudo guardar el ${config.singular}.`);else{form.reset();setOpen(false);await reload();}}
+  async function changeStatus(id:string,status:string){const {error}=await supabase.from(config.collection).update({status}).eq("id",id).eq("organization_id",organization.id);if(error)setMessage("No se pudo actualizar el estado.");else await reload();}
+  return <section><ModuleTitle kicker={config.kicker} title={config.title} subtitle={config.subtitle}><button className="primary compact" onClick={()=>setOpen(!open)}>＋ Nuevo</button></ModuleTitle>
+    <div className="claim-summary"><article><b>{items.length}</b><span>Registros</span></article><article><b>{pending}</b><span>Pendientes</span></article><article><b>{items.filter(item=>item.priority==="urgente"||item.priority==="alta").length}</b><span>Prioridad alta</span></article><article><b>{items.filter(item=>item.responsible_user_id).length}</b><span>Asignados</span></article></div>
+    {open&&<form className="entry-form panel" onSubmit={submit}><div className="form-grid"><label className="wide">Título<input name="title" required maxLength={140}/></label><label>Estado<select name="status"><option value="pendiente">Pendiente</option><option value="en_proceso">En proceso</option><option value="confirmado">Confirmado</option><option value="completado">Completado</option></select></label><label>Prioridad<select name="priority"><option value="media">Media</option><option value="alta">Alta</option><option value="urgente">Urgente</option><option value="baja">Baja</option></select></label><label>Fecha y hora<input name="scheduled_for" type="datetime-local"/></label><label>Lugar / zona<input name="location" maxLength={180}/></label><label>Responsable<select name="responsible_user_id"><option value="">Sin asignar</option>{members.filter(member=>member.active).map(member=><option value={member.user_id} key={member.user_id}>{member.profiles?.full_name||"Usuario"}</option>)}</select></label><label className="wide">Notas<textarea name="notes" maxLength={1500}/></label></div><div className="form-actions"><button type="button" onClick={()=>setOpen(false)}>Cancelar</button><button className="primary compact">Guardar</button></div></form>}
+    <article className="panel"><PanelHead kicker="SEGUIMIENTO" title={config.title} aside={`${items.length} registros`}/>{items.length===0?<Empty title={`Sin ${config.singular}s cargados`} text="Use el botón Nuevo para crear el primer registro."/>:<div className="campaign-record-list">{items.map(item=><div key={item.id}><span className={`priority-dot ${item.priority}`}/><div><strong>{item.title}</strong><small>{item.location||"Sin ubicación"} · {item.scheduled_for?new Date(item.scheduled_for).toLocaleString("es-AR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}):"Sin fecha"}</small></div><em>{members.find(member=>member.user_id===item.responsible_user_id)?.profiles?.full_name||"Sin responsable"}</em><select value={item.status} onChange={event=>changeStatus(item.id,event.target.value)}><option value="pendiente">Pendiente</option><option value="en_proceso">En proceso</option><option value="confirmado">Confirmado</option><option value="completado">Completado</option></select></div>)}</div>}</article>
+    {message&&<button className="toast" onClick={()=>setMessage("")}>{message}<span>×</span></button>}
+  </section>;
+}
+
 function AdminView({ profile, organization, organizations, teams, members, referents, auditItems, reloadAll, selectOrganization }: {
   profile: Profile; organization: Organization; organizations: Organization[]; teams: Team[]; members: Member[];
   referents:Referent[];
@@ -357,10 +392,13 @@ function AdminView({ profile, organization, organizations, teams, members, refer
   const [teamOpen, setTeamOpen] = useState(false);
   const [orgOpen, setOrgOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
-  const [bulkOpen, setBulkOpen] = useState(false);
   const [inviting, setInviting] = useState(false);
   const [message, setMessage] = useState("");
+  const [generatedLink,setGeneratedLink]=useState("");
+  const [invitations,setInvitations]=useState<Invitation[]>([]);
   const [adminTab,setAdminTab]=useState<"espacio"|"equipos"|"usuarios"|"auditoria">("espacio");
+  const loadInvitations=useCallback(async()=>{const result=await supabase.from("invitations").select("*").eq("organization_id",organization.id).order("created_at",{ascending:false}).limit(100);setInvitations(result.error?[]:(result.data??[]) as Invitation[]);},[organization.id]);
+  useEffect(()=>{void loadInvitations();},[loadInvitations]);
 
   async function createTeam(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); const form = event.currentTarget; const data = new FormData(form);
@@ -387,21 +425,18 @@ function AdminView({ profile, organization, organizations, teams, members, refer
     const form = event.currentTarget;
     const data = new FormData(form);
     setInviting(true); setMessage("");
-    const { data: result, error } = await supabase.functions.invoke("invite-team-member", {
-      body: {
-        organization_id: organization.id,
-        full_name: data.get("full_name"),
-        email: data.get("email"),
-        team_id: data.get("team_id") || null,
-        role: data.get("role"),
-      },
+    const role=String(data.get("role")||"territorio") as Role;
+    const defaults=role==="coordinacion"?configurableModules.map(([id])=>id):role==="territorio"?["sedes","gestion","agenda","propuestas","territorio","tareas","operativos","eventos"]:role==="finanzas"?["presupuesto","agenda","logistica"]:["agenda"];
+    const token=`${crypto.randomUUID().replaceAll("-","")}${crypto.randomUUID().replaceAll("-","")}`;
+    const { error } = await supabase.from("invitations").insert({
+      id:token,organization_id:organization.id,full_name:String(data.get("full_name")||"").trim().slice(0,120),email:String(data.get("email")||"").trim().toLowerCase(),team_id:data.get("team_id")||null,role,allowed_modules:defaults,status:"pending",expires_at_ms:Date.now()+7*24*60*60*1000,created_by:profile.id,
     });
-    if (error || result?.error) setMessage(result?.error || "No se pudo enviar la invitación.");
+    if (error) setMessage("No se pudo generar la invitación.");
     else {
-      setMessage(result.status === "existing" ? "Usuario existente agregado al equipo." : "Invitación enviada correctamente.");
+      const link=`${window.location.origin}/?invite=${token}`;setGeneratedLink(link);setMessage("Invitación creada. Copiá el enlace y envialo por WhatsApp o correo.");
       form.reset();
       setInviteOpen(false);
-      await reloadAll();
+      await loadInvitations();
     }
     setInviting(false);
   }
@@ -417,27 +452,11 @@ function AdminView({ profile, organization, organizations, teams, members, refer
   async function removeMember(member: Member) {
     if (member.user_id === profile.id) return setMessage("No podés borrar tu propio acceso.");
     if (!window.confirm(`¿Borrar a ${member.profiles?.full_name || "este usuario"}?`)) return;
-    const { data, error } = await supabase.functions.invoke("invite-team-member", { body: { action: "remove", organization_id: organization.id, user_id: member.user_id } });
-    setMessage(error || data?.error ? (data?.error || "No se pudo borrar el usuario.") : "Usuario eliminado correctamente.");
-    if (!error && !data?.error) await reloadAll();
+    const { error } = await supabase.from("memberships").delete().eq("organization_id",organization.id).eq("user_id",member.user_id);
+    setMessage(error?"No se pudo retirar el usuario.":"Usuario retirado del espacio.");
+    if (!error) await reloadAll();
   }
-
-  async function bulkInvite(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); setInviting(true);
-    const file = new FormData(event.currentTarget).get("csv") as File;
-    const lines = (await file.text()).replace(/^\uFEFF/, "").split(/\r?\n/).filter(Boolean);
-    const separator = lines[0]?.includes(";") ? ";" : ",";
-    let success = 0; let failed = 0;
-    for (const line of lines.slice(1, 101)) {
-      const [full_name, email, teamName, roleName] = line.split(separator).map((v) => v.trim());
-      const team = teams.find((t) => t.name.toLowerCase() === (teamName || "").toLowerCase());
-      const role = Object.keys(roleLabels).includes(roleName) ? roleName : "territorio";
-      const { data, error } = await supabase.functions.invoke("invite-team-member", { body: { organization_id: organization.id, full_name, email, team_id: team?.id || null, role } });
-      if (error || data?.error) failed++; else success++;
-    }
-    setMessage(`Carga finalizada: ${success} procesados${failed ? ` y ${failed} con error` : ""}.`);
-    setInviting(false); setBulkOpen(false); await reloadAll();
-  }
+  async function revokeInvitation(invitation:Invitation){const {error}=await supabase.from("invitations").update({status:"revoked"}).eq("id",invitation.id).eq("organization_id",organization.id);setMessage(error?"No se pudo revocar la invitación.":"Invitación revocada.");if(!error)await loadInvitations();}
 
   async function createOrganization(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); const form = event.currentTarget; const data = new FormData(form);
@@ -448,7 +467,9 @@ function AdminView({ profile, organization, organizations, teams, members, refer
     }).select().single();
     if (error || !org) return setMessage("No se pudo crear el espacio político.");
     const { data: team } = await supabase.from("teams").insert({ organization_id: org.id, name: "Equipo central", description: "Coordinación general" }).select().single();
-    await supabase.from("memberships").insert({ organization_id: org.id, user_id: profile.id, team_id: team?.id ?? null, role: "admin" });
+    if (!profile.is_platform_admin) {
+      await supabase.from("memberships").insert({ organization_id: org.id, user_id: profile.id, team_id: team?.id ?? null, role: "admin" });
+    }
     form.reset(); setOrgOpen(false); await reloadAll(); selectOrganization(org.id);
   }
   async function saveBrand(event:FormEvent<HTMLFormElement>){
@@ -490,13 +511,14 @@ function AdminView({ profile, organization, organizations, teams, members, refer
     </div>}
     {adminTab==="usuarios"&&<div className="admin-single">
       <article className="panel admin-section">
-        <PanelHead kicker="PERSONAS Y PERMISOS" title="Usuarios" aside={<div className="user-tools"><button className="text-button" onClick={() => setBulkOpen(!bulkOpen)}>⇧ Carga masiva</button><button className="text-button" onClick={() => setInviteOpen(!inviteOpen)}>＋ Invitar usuario</button></div>} />
-        {bulkOpen && <form className="bulk-form" onSubmit={bulkInvite}><div><strong>Cargar CSV</strong><small>nombre; email; equipo; rol (máximo 100)</small></div><input name="csv" type="file" accept=".csv,text/csv" required /><button className="primary compact" disabled={inviting}>{inviting ? "Procesando..." : "Cargar"}</button></form>}
+        <PanelHead kicker="PERSONAS Y PERMISOS" title="Usuarios" aside={<div className="user-tools"><button className="text-button" onClick={() => setInviteOpen(!inviteOpen)}>＋ Crear invitación</button></div>} />
         {inviteOpen && <form className="invite-form" onSubmit={inviteMember}>
           <div><label>Nombre completo<input name="full_name" required placeholder="Ana Páez" /></label><label>Correo electrónico<input name="email" required type="email" placeholder="ana@correo.com" /></label></div>
           <div><label>Equipo<select name="team_id"><option value="">Sin equipo</option>{teams.map((team) => <option value={team.id} key={team.id}>{team.name}</option>)}</select></label><label>Rol<select name="role" defaultValue="territorio">{Object.entries(roleLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label></div>
-          <div className="invite-actions"><button type="button" onClick={() => setInviteOpen(false)}>Cancelar</button><button className="primary compact" disabled={inviting}>{inviting ? "Enviando..." : "Enviar invitación"}</button></div>
+          <div className="invite-actions"><button type="button" onClick={() => setInviteOpen(false)}>Cancelar</button><button className="primary compact" disabled={inviting}>{inviting ? "Generando..." : "Generar enlace"}</button></div>
         </form>}
+        {generatedLink&&<div className="generated-invite"><div><strong>Enlace listo para enviar</strong><small>Vence en 7 días y funciona una sola vez.</small></div><input readOnly value={generatedLink}/><button className="primary compact" onClick={()=>{void navigator.clipboard.writeText(generatedLink);setMessage("Enlace copiado.")}}>Copiar enlace</button></div>}
+        {invitations.length>0&&<div className="invitation-list">{invitations.map(invitation=><div key={invitation.id}><span>{invitation.full_name.slice(0,1).toUpperCase()}</span><div><strong>{invitation.full_name}</strong><small>{invitation.email} · {invitation.status==="pending"?"Pendiente":invitation.status==="used"?"Utilizada":"Revocada"}</small></div><em>{new Date(invitation.expires_at_ms).toLocaleDateString("es-AR")}</em>{invitation.status==="pending"&&<><button onClick={()=>{const link=`${window.location.origin}/?invite=${invitation.id}`;setGeneratedLink(link);void navigator.clipboard.writeText(link);setMessage("Enlace copiado.")}}>Copiar</button><button className="member-delete" onClick={()=>revokeInvitation(invitation)}>Revocar</button></>}</div>)}</div>}
         <div className="member-list">{members.map((member) => <div className={!member.active ? "member-disabled" : ""} key={member.user_id}>
           <span className="avatar">{(member.profiles?.full_name ?? "U").split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase()}</span>
           <div><strong>{member.profiles?.full_name}</strong><small>{member.active ? "Usuario habilitado" : "Acceso desactivado"}</small></div>
@@ -683,6 +705,7 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
   const [voters,setVoters]=useState<Voter[]>([]);
   const [voterImports, setVoterImports] = useState<VoterImport[]>([]);
   const [auditItems, setAuditItems] = useState<AuditItem[]>([]);
+  const [campaignRecords,setCampaignRecords]=useState<Record<keyof typeof campaignModuleConfig,CampaignRecord[]>>({tareas:[],operativos:[],eventos:[],comunicacion:[],logistica:[],fiscalizacion:[]});
   const [menuOpen,setMenuOpen]=useState(false);
   const [bellOpen,setBellOpen]=useState(false);
   const [notice, setNotice] = useState("");
@@ -726,14 +749,16 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
   const canAdmin = profile.is_platform_admin || orgRole === "admin";
 
   const loadOrganizations = useCallback(async () => {
-    const { data } = await supabase.from("organizations").select("*").eq("active", true).order("name");
+    const organizationsQuery = supabase.from("organizations").select("*");
+    if (!profile.is_platform_admin) organizationsQuery.eq("active", true);
+    const { data } = await organizationsQuery.order("name");
     const list = (data ?? []) as Organization[]; setOrganizations(list);
     setOrganizationId((current) => current && list.some((org) => org.id === current) ? current : list[0]?.id ?? "");
     if(list.length===0)setContextLoading(false);
-  }, []);
+  }, [profile.is_platform_admin]);
   const loadContext = useCallback(async () => {
     if (!organizationId) return;
-    const [teamResult, memberResult, sedeResult, budgetResult, claimResult, projectResult, proposalResult, activityResult, referentResult,voterResult,importResult,auditResult] = await Promise.all([
+    const [teamResult, memberResult, sedeResult, budgetResult, claimResult, projectResult, proposalResult, activityResult, referentResult,voterResult,importResult,auditResult,...campaignResults] = await Promise.all([
       supabase.from("teams").select("*").eq("organization_id", organizationId).eq("active", true).order("name"),
       supabase.from("memberships").select("organization_id,user_id,team_id,role,active,allowed_modules,profiles(id,full_name,active)").eq("organization_id", organizationId),
       supabase.from("headquarters").select("id,name,address,circuit,phone,team_id,responsible_user_id,active,latitude,longitude").eq("organization_id", organizationId).eq("active", true).order("name"),
@@ -746,6 +771,7 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
       supabase.from("voters").select("id,dni,full_name,address,circuit,polling_place,contact_status,assigned_to,source_data").eq("organization_id",organizationId).order("full_name").limit(500),
       supabase.from("voter_imports").select("*").eq("organization_id",organizationId).order("created_at",{ascending:false}).limit(25),
       supabase.from("audit_log").select("id,entity_type,entity_id,action,details,created_at,actor_id").eq("organization_id",organizationId).order("created_at",{ascending:false}).limit(50),
+      ...Object.values(campaignModuleConfig).map(config=>supabase.from(config.collection).select("*").eq("organization_id",organizationId).order("created_at",{ascending:false}).limit(300)),
     ]);
     setTeams((teamResult.data ?? []) as Team[]);
     setMembers((memberResult.data ?? []) as unknown as Member[]);
@@ -759,6 +785,8 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
     setVoters(voterResult.error?[]:(voterResult.data??[]) as Voter[]);
     setVoterImports(importResult.error?[]:(importResult.data??[]) as VoterImport[]);
     setAuditItems(auditResult.error?[]:(auditResult.data??[]) as AuditItem[]);
+    const campaignKeys=Object.keys(campaignModuleConfig) as (keyof typeof campaignModuleConfig)[];
+    setCampaignRecords(Object.fromEntries(campaignKeys.map((key,index)=>[key,campaignResults[index]?.error?[]:(campaignResults[index]?.data??[]) as CampaignRecord[]])) as Record<keyof typeof campaignModuleConfig,CampaignRecord[]>);
     setContextLoading(false);
   }, [organizationId]);
   useEffect(() => {
@@ -778,6 +806,12 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
     { id: "agenda", label: "Agenda", icon: "▣" },
     { id: "propuestas", label: "Propuestas", icon: "◆" },
     { id: "territorio", label: "Territorio", icon: "◎" },
+    { id: "tareas", label: "Tareas", icon: "✓" },
+    { id: "operativos", label: "Operativos", icon: "⌖" },
+    { id: "eventos", label: "Eventos", icon: "◉" },
+    { id: "comunicacion", label: "Comunicación", icon: "◫" },
+    { id: "logistica", label: "Logística", icon: "▤" },
+    { id: "fiscalizacion", label: "Fiscalización", icon: "⚑" },
     ...(canAdmin ? [{ id: "admin", label: "Administración", icon: "⚙" }] : []),
   ];
   const modules=allModules.filter(item=>item.id==="inicio"||item.id==="admin"||profile.is_platform_admin||orgRole==="admin"||(membership?.allowed_modules??(orgRole==="coordinacion"?configurableModules.map(([id])=>id):orgRole==="territorio"?["sedes","gestion","agenda","propuestas","territorio"]:orgRole==="finanzas"?["presupuesto","agenda"]:["agenda"])).includes(item.id));
@@ -788,7 +822,7 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
     setActive(id);setMenuOpen(false);
   }
   if (contextLoading) return <Splash/>;
-  if (!organization) return <main className="access-state"><Logo /><h1>Sin espacio asignado</h1><p>Tu cuenta está activa, pero aún no pertenece a una organización política.</p><button className="primary compact" onClick={() => void supabase.auth.signOut()}>Cerrar sesión</button></main>;
+  if (!organization) return <main className="access-state"><Logo /><h1>Sin espacio asignado</h1><p>Tu cuenta de Google o correo está activa, pero no pertenece a un espacio político habilitado. Comunicate con el referente o administrador de tu campaña.</p><button className="primary compact" onClick={() => void supabase.auth.signOut()}>Cerrar sesión</button></main>;
 
   const initials = profile.full_name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
   const notifications=[
@@ -811,6 +845,7 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
       {active === "propuestas" && <ProposalsView user={session.user} organization={organization} members={members} claims={claims} projects={projects} items={proposals} reload={loadContext}/>}
       {active === "agenda" && <AgendaView user={session.user} organization={organization} teams={teams} members={members} headquarters={headquarters} items={activities} reload={loadContext}/>}
       {active === "territorio" && <><ModuleTitle kicker="TERRITORIO EN TIEMPO REAL" title="Mapa de campaña" subtitle="Filtrá sedes, reclamos y referentes; tocá cada punto para ver su información."/><article className="panel territory-map-panel territory-map-primary"><PanelHead kicker="LEAFLET · MAPA DE CALLES" title="Cobertura territorial" aside={`${territoryPoints.length} ubicaciones`}/><TerritoryMap points={territoryPoints}/></article><TerritoryView user={session.user} organization={organization} teams={teams} members={members} headquarters={headquarters} items={referents} reload={loadContext}/></>}
+      {(Object.keys(campaignModuleConfig) as (keyof typeof campaignModuleConfig)[]).map(moduleId=>active===moduleId&&<CampaignModuleView key={moduleId} moduleId={moduleId} user={session.user} organization={organization} members={members} items={campaignRecords[moduleId]} reload={loadContext}/>)}
       {active === "admin" && <AdminView profile={profile} organization={organization} organizations={organizations} teams={teams} members={members} referents={referents} auditItems={auditItems} reloadAll={reloadAll} selectOrganization={setOrganizationId} />}
     </div>
     {menuOpen&&<button className="menu-backdrop" aria-label="Cerrar menú" onClick={()=>setMenuOpen(false)}/>}<aside className={`side-menu ${menuOpen?"open":""}`}><div className="side-menu-head"><Logo compact/><button onClick={()=>setMenuOpen(false)}>×</button></div><p className="kicker">MÓDULOS HABILITADOS</p><nav aria-label="Navegación principal">{modules.map(item=><button className={active===item.id?"active":""} onClick={()=>go(item.id)} key={item.id}><span>{item.icon}</span>{item.label}</button>)}</nav><div className="side-user"><b>{profile.full_name}</b><span>{roleLabels[orgRole]} · {organization.name}</span></div></aside>
@@ -832,29 +867,55 @@ export default function Home() {
   }, []);
   useEffect(() => {
     if (!session) return;
-    let timer: ReturnType<typeof setTimeout>;
-    const reset = () => {
-      clearTimeout(timer);
-      timer = setTimeout(() => void supabase.auth.signOut(), 30 * 60 * 1000);
-    };
-    const events = ["pointerdown", "keydown", "touchstart"];
-    events.forEach((event) => window.addEventListener(event, reset, { passive: true }));
-    reset();
-    return () => { clearTimeout(timer); events.forEach((event) => window.removeEventListener(event, reset)); };
-  }, [session]);
-  useEffect(() => {
-    if (!session) return;
     const timer = window.setTimeout(() => {
       setLoading(true);
-      void supabase.from("profiles").select("id,full_name,role,active,is_platform_admin").eq("id", session.user.id).single().then(({ data }) => {
-        setProfile(data as Profile | null);
+      void (async () => {
+        const inviteToken=new URLSearchParams(window.location.search).get("invite");
+        if(inviteToken){
+          const redeemed=await supabase.invitations.redeem(inviteToken);
+          if(!redeemed.error)window.history.replaceState({},"",window.location.pathname);
+        }
+        const profileResult = await supabase.from("profiles").select("id,full_name,role,active,is_platform_admin").eq("id", session.user.id).maybeSingle();
+        let currentProfile = profileResult.data as Profile | null;
+        const isBootstrapAdmin = session.user.email?.toLowerCase() === "emilianovillagra@gmail.com";
+        if (!currentProfile && isBootstrapAdmin) {
+          const bootstrapProfile: Profile = {
+            id: session.user.id,
+            full_name: "Emiliano Villagra",
+            role: "admin",
+            active: true,
+            is_platform_admin: true,
+          };
+          const profileCreation = await supabase.from("profiles").insert(bootstrapProfile).select().single();
+          if (!profileCreation.error) currentProfile = bootstrapProfile;
+        }
+        if (currentProfile?.is_platform_admin && isBootstrapAdmin) {
+          const organizationId = "rumbo-al-9-de-mayo";
+          await supabase.from("organizations").insert({
+            id: organizationId,
+            name: "Equipo Ernesto Nagle",
+            candidate_name: "Ernesto Nagle",
+            position_sought: "Legislador provincial",
+            slug: "ernesto-nagle",
+            primary_color: "#182554",
+            accent_color: "#f4a640",
+            active: true,
+            plan_name: "Campaña completa",
+            license_status: "active",
+          });
+          // El administrador de plataforma administra todos los espacios sin pertenecer a sus equipos.
+          await supabase.from("memberships").delete()
+            .eq("organization_id", organizationId)
+            .eq("user_id", session.user.id);
+        }
+        setProfile(currentProfile);
         setLoading(false);
-      });
+      })();
     }, 0);
     return () => window.clearTimeout(timer);
   }, [session]);
   if (loading) return <Splash/>;
   if (!session) return <Login />;
-  if (!profile || !profile.active) return <main className="access-state"><Logo /><h1>Acceso pendiente</h1><p>La cuenta debe ser habilitada por Administración.</p><button className="primary compact" onClick={() => void supabase.auth.signOut()}>Cerrar sesión</button></main>;
+  if (!profile || !profile.active) return <main className="access-state"><Logo /><h1>Acceso pendiente</h1><p>Esta cuenta no pertenece a un espacio político habilitado. Comunicate con el referente o administrador de tu campaña para solicitar acceso.</p><button className="primary compact" onClick={() => void supabase.auth.signOut()}>Cerrar sesión</button></main>;
   return <Dashboard session={session} profile={profile} />;
 }
