@@ -165,7 +165,7 @@ class FirebaseQueryBuilder implements PromiseLike<QueryResult> {
         return { data: null, error: null };
       }
 
-      let rows = snapshots.map(snapshot => ({ id: snapshot.id, ...snapshot.data() }));
+      let rows: Record<string, unknown>[] = snapshots.map(snapshot => ({ id: snapshot.id, ...snapshot.data() }));
       rows = await this.enrich(rows);
       if (this.orderField) {
         const direction = this.ascending ? 1 : -1;
