@@ -29,7 +29,6 @@ import {
   writeBatch,
   type QueryConstraint,
 } from "firebase/firestore";
-import { getFunctions, httpsCallable } from "firebase/functions";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY ?? "AIzaSyAIvrrtzorp6e6pwqYugdRc7NMlyT3u6FA",
@@ -43,7 +42,6 @@ const firebaseConfig = {
 export const firebaseApp = getApps().length ? getApp() : initializeApp(firebaseConfig);
 export const firebaseAuth = getAuth(firebaseApp);
 export const firestore = getFirestore(firebaseApp);
-const functions = getFunctions(firebaseApp, "southamerica-east1");
 const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: "select_account" });
 
@@ -255,21 +253,6 @@ export const firebase = {
         return { data: { organization_id: invitation.organization_id }, error: null };
       } catch (cause) {
         return { data: null, error: cause instanceof Error ? cause : new Error("No se pudo utilizar la invitación") };
-      }
-    },
-  },
-  functions: {
-    async invoke(name: string, { body }: { body: Record<string, unknown> }) {
-      try {
-        const callable = httpsCallable<Record<string, unknown>, any>(functions, name.replaceAll("-", "_"));
-        const result = await callable(body);
-        if (name === "invite-team-member" && body.action !== "remove" && typeof body.email === "string") {
-          try { await sendPasswordResetEmail(firebaseAuth, body.email, { url: window.location.origin }); }
-          catch { /* La cuenta puede usar Google o el correo puede enviarse luego desde Recuperar contraseña. */ }
-        }
-        return { data: result.data, error: null };
-      } catch (cause) {
-        return { data: null, error: cause instanceof Error ? cause : new Error("No se pudo ejecutar la operación") };
       }
     },
   },
