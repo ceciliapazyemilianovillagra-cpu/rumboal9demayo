@@ -16,7 +16,7 @@ async function canManage(uid: string, organizationId: string) {
     (membership.data()?.active === true && ["admin", "coordinacion"].includes(membership.data()?.role));
 }
 
-export const invite_team_member = onCall({ region: "us-central1" }, async request => {
+export const invite_team_member = onCall({ region: "southamerica-east1" }, async request => {
   if (!request.auth) throw new HttpsError("unauthenticated", "Debe iniciar sesión.");
   const organizationId = String(request.data.organization_id ?? "");
   if (!organizationId || !(await canManage(request.auth.uid, organizationId))) {

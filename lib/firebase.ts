@@ -40,7 +40,7 @@ const firebaseConfig = {
 export const firebaseApp = getApps().length ? getApp() : initializeApp(firebaseConfig);
 export const firebaseAuth = getAuth(firebaseApp);
 export const firestore = getFirestore(firebaseApp);
-const functions = getFunctions(firebaseApp, "us-central1");
+const functions = getFunctions(firebaseApp, "southamerica-east1");
 
 if (typeof window !== "undefined") {
   void setPersistence(firebaseAuth, browserLocalPersistence).catch(() => undefined);
