@@ -1,0 +1,96 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function profile() { return get(/databases/$(database)/documents/profiles/$(request.auth.uid)); }
+    function platformAdmin() { return signedIn() && profile().data.is_platform_admin == true; }
+    function membershipId(orgId) { return orgId + "_" + request.auth.uid; }
+    function membership(orgId) {
+      return get(/databases/$(database)/documents/memberships/$(membershipId(orgId)));
+    }
+    function member(orgId) { return signedIn() && membership(orgId).data.active == true; }
+    function manager(orgId) {
+      return platformAdmin() || (member(orgId) && membership(orgId).data.role in ["admin", "coordinacion"]);
+    }
+    function moduleAccess(orgId, moduleName) {
+      return manager(orgId) || (member(orgId) && moduleName in membership(orgId).data.allowed_modules);
+    }
+
+    match /profiles/{uid} {
+      allow read: if signedIn();
+      allow update: if request.auth.uid == uid || platformAdmin();
+      allow create, delete: if platformAdmin();
+    }
+    match /organizations/{orgId} {
+      allow read: if member(orgId) || platformAdmin();
+      allow create: if platformAdmin();
+      allow update, delete: if manager(orgId);
+    }
+    match /memberships/{membershipDoc} {
+      allow read: if platformAdmin() || request.auth.uid == resource.data.user_id || member(resource.data.organization_id);
+      allow write: if platformAdmin() || manager(request.resource.data.organization_id);
+      allow delete: if platformAdmin() || manager(resource.data.organization_id);
+    }
+
+    match /voters/{id} {
+      allow read: if moduleAccess(resource.data.organization_id, "votantes");
+      allow create: if moduleAccess(request.resource.data.organization_id, "votantes");
+      allow update, delete: if manager(resource.data.organization_id);
+    }
+    match /budget_entries/{id} {
+      allow read: if moduleAccess(resource.data.organization_id, "presupuesto");
+      allow create: if moduleAccess(request.resource.data.organization_id, "presupuesto");
+      allow update, delete: if manager(resource.data.organization_id);
+    }
+    match /activities/{id} {
+      allow read: if moduleAccess(resource.data.organization_id, "agenda");
+      allow create: if moduleAccess(request.resource.data.organization_id, "agenda");
+      allow update, delete: if moduleAccess(resource.data.organization_id, "agenda");
+    }
+    match /headquarters/{id} {
+      allow read: if moduleAccess(resource.data.organization_id, "sedes");
+      allow create: if moduleAccess(request.resource.data.organization_id, "sedes");
+      allow update, delete: if moduleAccess(resource.data.organization_id, "sedes");
+    }
+    match /teams/{id} {
+      allow read: if moduleAccess(resource.data.organization_id, "sedes");
+      allow create: if moduleAccess(request.resource.data.organization_id, "sedes");
+      allow update, delete: if moduleAccess(resource.data.organization_id, "sedes");
+    }
+    match /territorial_referents/{id} {
+      allow read: if moduleAccess(resource.data.organization_id, "sedes");
+      allow create: if moduleAccess(request.resource.data.organization_id, "sedes");
+      allow update, delete: if moduleAccess(resource.data.organization_id, "sedes");
+    }
+    match /claims/{id} {
+      allow read: if moduleAccess(resource.data.organization_id, "gestion");
+      allow create: if moduleAccess(request.resource.data.organization_id, "gestion");
+      allow update, delete: if moduleAccess(resource.data.organization_id, "gestion");
+    }
+    match /projects/{id} {
+      allow read: if moduleAccess(resource.data.organization_id, "gestion");
+      allow create: if moduleAccess(request.resource.data.organization_id, "gestion");
+      allow update, delete: if moduleAccess(resource.data.organization_id, "gestion");
+    }
+    match /proposals/{id} {
+      allow read: if moduleAccess(resource.data.organization_id, "propuestas");
+      allow create: if moduleAccess(request.resource.data.organization_id, "propuestas");
+      allow update, delete: if moduleAccess(resource.data.organization_id, "propuestas");
+    }
+    match /voter_imports/{id} {
+      allow read: if moduleAccess(resource.data.organization_id, "votantes");
+      allow create: if moduleAccess(request.resource.data.organization_id, "votantes");
+      allow update, delete: if manager(resource.data.organization_id);
+    }
+    match /audit_log/{id} {
+      allow read: if manager(resource.data.organization_id);
+      allow create: if member(request.resource.data.organization_id);
+      allow update, delete: if false;
+    }
+    match /{collectionName}/{id} {
+      allow read: if resource.data.organization_id != null && member(resource.data.organization_id);
+      allow create: if request.resource.data.organization_id != null && manager(request.resource.data.organization_id);
+      allow update, delete: if resource.data.organization_id != null && manager(resource.data.organization_id);
+    }
+  }
+}

@@ -1,8 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import type { Session, User } from "@supabase/supabase-js";
-import { supabase } from "../lib/supabase";
+import { firebase as supabase, type Session, type User } from "../lib/firebase";
 import { TerritoryMap, type MapPoint } from "./territory-map";
 
 type Role = "admin" | "coordinacion" | "territorio" | "finanzas" | "consulta";
