@@ -15,6 +15,13 @@ service cloud.firestore {
     function moduleAccess(orgId, moduleName) {
       return manager(orgId) || (member(orgId) && moduleName in membership(orgId).data.allowed_modules);
     }
+    function invitation(token) { return get(/databases/$(database)/documents/invitations/$(token)); }
+    function validInvitation(token) {
+      return signedIn() && token != null &&
+        invitation(token).data.status == "pending" &&
+        invitation(token).data.expires_at_ms > request.time.toMillis() &&
+        invitation(token).data.email == request.auth.token.email;
+    }
 
     match /profiles/{uid} {
       allow read: if signedIn();
@@ -29,6 +36,11 @@ service cloud.firestore {
         request.auth.token.email == "emilianovillagra@gmail.com" &&
         request.resource.data.is_platform_admin == true &&
         request.resource.data.active == true
+      ) || (
+        request.auth.uid == uid && validInvitation(request.resource.data.invite_token) &&
+        request.resource.data.is_platform_admin == false &&
+        request.resource.data.active == true &&
+        request.resource.data.role == invitation(request.resource.data.invite_token).data.role
       );
       allow delete: if platformAdmin();
     }
@@ -40,7 +52,32 @@ service cloud.firestore {
     match /memberships/{membershipDoc} {
       allow read: if platformAdmin() || request.auth.uid == resource.data.user_id || member(resource.data.organization_id);
       allow write: if platformAdmin() || manager(request.resource.data.organization_id);
+      allow create: if validInvitation(request.resource.data.invite_token) &&
+        request.resource.data.user_id == request.auth.uid &&
+        request.resource.data.organization_id == invitation(request.resource.data.invite_token).data.organization_id &&
+        request.resource.data.role == invitation(request.resource.data.invite_token).data.role &&
+        request.resource.data.allowed_modules == invitation(request.resource.data.invite_token).data.allowed_modules;
       allow delete: if platformAdmin() || manager(resource.data.organization_id);
+    }
+    match /invitations/{token} {
+      allow create: if manager(request.resource.data.organization_id) &&
+        request.resource.data.status == "pending" &&
+        request.resource.data.email is string &&
+        request.resource.data.email.matches('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$') &&
+        request.resource.data.expires_at_ms > request.time.toMillis() &&
+        request.resource.data.expires_at_ms <= request.time.toMillis() + 1209600000;
+      allow read: if manager(resource.data.organization_id) ||
+        (signedIn() && resource.data.email == request.auth.token.email);
+      allow update: if manager(resource.data.organization_id) || (
+        validInvitation(token) &&
+        request.resource.data.organization_id == resource.data.organization_id &&
+        request.resource.data.email == resource.data.email &&
+        request.resource.data.role == resource.data.role &&
+        request.resource.data.allowed_modules == resource.data.allowed_modules &&
+        request.resource.data.status == "used" &&
+        request.resource.data.used_by == request.auth.uid
+      );
+      allow delete: if manager(resource.data.organization_id);
     }
 
     match /voters/{id} {

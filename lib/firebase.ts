@@ -1,6 +1,7 @@
 import { getApp, getApps, initializeApp } from "firebase/app";
 import {
   browserLocalPersistence,
+  createUserWithEmailAndPassword,
   getAuth,
   GoogleAuthProvider,
   onAuthStateChanged,
@@ -197,6 +198,10 @@ export const firebase = {
       try { await signInWithPopup(firebaseAuth, googleProvider); return { error: null }; }
       catch (cause) { return { error: cause instanceof Error ? cause : new Error("No se pudo ingresar con Google") }; }
     },
+    async signUpWithPassword({ email, password }: { email: string; password: string }) {
+      try { await createUserWithEmailAndPassword(firebaseAuth, email, password); return { error: null }; }
+      catch (cause) { return { error: cause instanceof Error ? cause : new Error("No se pudo crear la cuenta") }; }
+    },
     async resetPasswordForEmail(email: string, options?: { redirectTo?: string }) {
       try { await sendPasswordResetEmail(firebaseAuth, email, options?.redirectTo ? { url: options.redirectTo } : undefined); return { error: null }; }
       catch (cause) { return { error: cause instanceof Error ? cause : new Error("No se pudo enviar el correo") }; }
@@ -212,6 +217,47 @@ export const firebase = {
     async signOut() { await signOut(firebaseAuth); },
   },
   from(table: string) { return new FirebaseQueryBuilder(table); },
+  invitations: {
+    async redeem(token: string) {
+      try {
+        const user = firebaseAuth.currentUser;
+        if (!user?.email) throw new Error("Debe ingresar con el correo invitado.");
+        const invitationRef = doc(firestore, "invitations", token);
+        const invitationSnapshot = await getDoc(invitationRef);
+        if (!invitationSnapshot.exists()) throw new Error("La invitación no existe.");
+        const invitation = invitationSnapshot.data();
+        if (invitation.status !== "pending" || Number(invitation.expires_at_ms) <= Date.now()) throw new Error("La invitación venció o ya fue utilizada.");
+        if (String(invitation.email).toLowerCase() !== user.email.toLowerCase()) throw new Error("Debe usar el mismo correo al que se envió la invitación.");
+        const membershipId = `${invitation.organization_id}_${user.uid}`;
+        const batch = writeBatch(firestore);
+        batch.set(doc(firestore, "profiles", user.uid), {
+          id: user.uid,
+          full_name: invitation.full_name,
+          email: user.email.toLowerCase(),
+          role: invitation.role,
+          active: true,
+          is_platform_admin: false,
+          invite_token: token,
+          updated_at: new Date().toISOString(),
+        }, { merge: true });
+        batch.set(doc(firestore, "memberships", membershipId), {
+          organization_id: invitation.organization_id,
+          user_id: user.uid,
+          team_id: invitation.team_id ?? null,
+          role: invitation.role,
+          active: true,
+          allowed_modules: invitation.allowed_modules ?? [],
+          invite_token: token,
+          updated_at: new Date().toISOString(),
+        }, { merge: true });
+        batch.update(invitationRef, { status: "used", used_by: user.uid, used_at: new Date().toISOString() });
+        await batch.commit();
+        return { data: { organization_id: invitation.organization_id }, error: null };
+      } catch (cause) {
+        return { data: null, error: cause instanceof Error ? cause : new Error("No se pudo utilizar la invitación") };
+      }
+    },
+  },
   functions: {
     async invoke(name: string, { body }: { body: Record<string, unknown> }) {
       try {

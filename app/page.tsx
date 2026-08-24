@@ -34,6 +34,7 @@ type VoterImport = { id:string; file_name:string; file_size:number|null; source_
 type Voter = { id:number; dni:string; full_name:string; address:string|null; circuit:string|null; polling_place:string|null; contact_status:string; assigned_to:string|null; source_data:Record<string,unknown> };
 type AuditItem = { id:number; entity_type:string; entity_id:string; action:string; details:Record<string,unknown>; created_at:string; actor_id:string|null };
 type CampaignRecord = { id:string; organization_id:string; title:string; status:string; priority:string; responsible_user_id:string|null; scheduled_for:string|null; location:string|null; notes:string|null; created_at:string };
+type Invitation = { id:string; organization_id:string; full_name:string; email:string; team_id:string|null; role:Role; allowed_modules:string[]; status:"pending"|"used"|"revoked"; expires_at_ms:number; created_at:string };
 const configurableModules=[["votantes","Votantes"],["sedes","Sedes"],["presupuesto","Presupuesto"],["gestion","Reclamos y proyectos"],["agenda","Agenda"],["propuestas","Propuestas"],["territorio","Territorio y referentes"],["tareas","Tareas y responsables"],["operativos","Operativos territoriales"],["eventos","Eventos y asistencia"],["comunicacion","Comunicación"],["logistica","Logística"],["fiscalizacion","Fiscalización electoral"]] as const;
 
 const roleLabels: Record<Role, string> = {
@@ -111,12 +112,15 @@ function Login() {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [inviteToken,setInviteToken]=useState("");
+  useEffect(()=>{setInviteToken(new URLSearchParams(window.location.search).get("invite")??"");},[]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     setBusy(true); setMessage("");
-    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-    if (error) setMessage("No pudimos ingresar. Revisá el correo y la contraseña.");
+    let result = inviteToken ? await supabase.auth.signUpWithPassword({ email: email.trim(), password }) : await supabase.auth.signInWithPassword({ email: email.trim(), password });
+    if (inviteToken && result.error?.message.includes("email-already-in-use")) result = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+    if (result.error) setMessage(inviteToken?"No se pudo validar la invitación. Usá el correo invitado y una contraseña de al menos 6 caracteres.":"No pudimos ingresar. Revisá el correo y la contraseña.");
     setBusy(false);
   }
 
@@ -143,12 +147,12 @@ function Login() {
       <span>Una herramienta preparada para acompañar campañas de cualquier escala.</span>
     </section>
     <form className="login-card" onSubmit={submit}>
-      <div className="login-heading"><span className="kicker">ACCESO SEGURO</span><h2>Bienvenido</h2><p>Ingresá con la cuenta asignada a tu equipo.</p></div>
+      <div className="login-heading"><span className="kicker">{inviteToken?"INVITACIÓN SEGURA":"ACCESO SEGURO"}</span><h2>{inviteToken?"Sumate a tu espacio":"Bienvenido"}</h2><p>{inviteToken?"Creá tu cuenta o ingresá con Google usando exactamente el correo invitado.":"Ingresá con la cuenta asignada a tu equipo."}</p></div>
       <label>Correo electrónico<input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="nombre@equipo.com" autoComplete="email" /></label>
       <label>Contraseña<input required type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" autoComplete="current-password" /></label>
       <div className="login-options"><span>Usuarios autorizados</span><button type="button" onClick={resetPassword}>¿Olvidaste tu contraseña?</button></div>
       {message && <p className="form-message" role="status">{message}</p>}
-      <button className="primary" disabled={busy}>{busy ? "Verificando..." : "Ingresar a la plataforma"} <span>→</span></button>
+      <button className="primary" disabled={busy}>{busy ? "Verificando..." : inviteToken?"Aceptar invitación":"Ingresar a la plataforma"} <span>→</span></button>
       <div className="login-divider"><span>o</span></div>
       <button className="google-login" type="button" onClick={googleLogin} disabled={busy}><b>G</b> Continuar con Google</button>
       <p className="secure-note">● Conexión protegida</p>
@@ -388,10 +392,13 @@ function AdminView({ profile, organization, organizations, teams, members, refer
   const [teamOpen, setTeamOpen] = useState(false);
   const [orgOpen, setOrgOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
-  const [bulkOpen, setBulkOpen] = useState(false);
   const [inviting, setInviting] = useState(false);
   const [message, setMessage] = useState("");
+  const [generatedLink,setGeneratedLink]=useState("");
+  const [invitations,setInvitations]=useState<Invitation[]>([]);
   const [adminTab,setAdminTab]=useState<"espacio"|"equipos"|"usuarios"|"auditoria">("espacio");
+  const loadInvitations=useCallback(async()=>{const result=await supabase.from("invitations").select("*").eq("organization_id",organization.id).order("created_at",{ascending:false}).limit(100);setInvitations(result.error?[]:(result.data??[]) as Invitation[]);},[organization.id]);
+  useEffect(()=>{void loadInvitations();},[loadInvitations]);
 
   async function createTeam(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); const form = event.currentTarget; const data = new FormData(form);
@@ -418,21 +425,18 @@ function AdminView({ profile, organization, organizations, teams, members, refer
     const form = event.currentTarget;
     const data = new FormData(form);
     setInviting(true); setMessage("");
-    const { data: result, error } = await supabase.functions.invoke("invite-team-member", {
-      body: {
-        organization_id: organization.id,
-        full_name: data.get("full_name"),
-        email: data.get("email"),
-        team_id: data.get("team_id") || null,
-        role: data.get("role"),
-      },
+    const role=String(data.get("role")||"territorio") as Role;
+    const defaults=role==="coordinacion"?configurableModules.map(([id])=>id):role==="territorio"?["sedes","gestion","agenda","propuestas","territorio","tareas","operativos","eventos"]:role==="finanzas"?["presupuesto","agenda","logistica"]:["agenda"];
+    const token=`${crypto.randomUUID().replaceAll("-","")}${crypto.randomUUID().replaceAll("-","")}`;
+    const { error } = await supabase.from("invitations").insert({
+      id:token,organization_id:organization.id,full_name:String(data.get("full_name")||"").trim().slice(0,120),email:String(data.get("email")||"").trim().toLowerCase(),team_id:data.get("team_id")||null,role,allowed_modules:defaults,status:"pending",expires_at_ms:Date.now()+7*24*60*60*1000,created_by:profile.id,
     });
-    if (error || result?.error) setMessage(result?.error || "No se pudo enviar la invitación.");
+    if (error) setMessage("No se pudo generar la invitación.");
     else {
-      setMessage(result.status === "existing" ? "Usuario existente agregado al equipo." : "Invitación enviada correctamente.");
+      const link=`${window.location.origin}/?invite=${token}`;setGeneratedLink(link);setMessage("Invitación creada. Copiá el enlace y envialo por WhatsApp o correo.");
       form.reset();
       setInviteOpen(false);
-      await reloadAll();
+      await loadInvitations();
     }
     setInviting(false);
   }
@@ -448,48 +452,11 @@ function AdminView({ profile, organization, organizations, teams, members, refer
   async function removeMember(member: Member) {
     if (member.user_id === profile.id) return setMessage("No podés borrar tu propio acceso.");
     if (!window.confirm(`¿Borrar a ${member.profiles?.full_name || "este usuario"}?`)) return;
-    const { data, error } = await supabase.functions.invoke("invite-team-member", { body: { action: "remove", organization_id: organization.id, user_id: member.user_id } });
-    setMessage(error || data?.error ? (data?.error || "No se pudo borrar el usuario.") : "Usuario eliminado correctamente.");
-    if (!error && !data?.error) await reloadAll();
+    const { error } = await supabase.from("memberships").delete().eq("organization_id",organization.id).eq("user_id",member.user_id);
+    setMessage(error?"No se pudo retirar el usuario.":"Usuario retirado del espacio.");
+    if (!error) await reloadAll();
   }
-
-  async function bulkInvite(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); setInviting(true);
-    const file = new FormData(event.currentTarget).get("users_file") as File;
-    if (!file || file.size > 5 * 1024 * 1024) { setMessage("El archivo debe pesar menos de 5 MB."); setInviting(false); return; }
-    let rawRows: unknown[][] = [];
-    if (file.name.toLowerCase().endsWith(".xlsx")) {
-      const { default: readXlsxFile } = await import("read-excel-file");
-      rawRows = await readXlsxFile(file) as unknown[][];
-    } else {
-      const lines = (await file.text()).replace(/^\uFEFF/, "").split(/\r?\n/).filter(Boolean);
-      const separator = lines.find(line=>line.toLowerCase().includes("nombre_completo"))?.includes(";") ? ";" : ",";
-      rawRows = lines.map(line=>line.split(separator));
-    }
-    const headerIndex = rawRows.findIndex(row=>row.map(value=>String(value??"").trim().toLowerCase()).includes("nombre_completo"));
-    if (headerIndex < 0) { setMessage("El archivo no contiene la columna nombre_completo. Descargá y usá la plantilla oficial."); setInviting(false); return; }
-    const headers = rawRows[headerIndex].map(value=>String(value??"").trim().toLowerCase());
-    const column = (name:string)=>headers.indexOf(name);
-    const validRoles = Object.keys(roleLabels);
-    const validModules = configurableModules.map(([id])=>id);
-    const rows = rawRows.slice(headerIndex+1).filter(row=>row.some(value=>String(value??"").trim())).slice(0,500);
-    const teamMap = new Map(teams.map(team=>[team.name.trim().toLowerCase(),team.id]));
-    let success = 0; let failed = 0;
-    for (const row of rows) {
-      const full_name=String(row[column("nombre_completo")]??"").trim(),email=String(row[column("correo")]??"").trim().toLowerCase();
-      const teamName=String(row[column("equipo")]??"").trim(),requestedRole=String(row[column("rol")]??"territorio").trim().toLowerCase();
-      const role=validRoles.includes(requestedRole)?requestedRole:"territorio";
-      const allowed_modules=String(row[column("modulos")]??"").split(";").map(value=>value.trim().toLowerCase()).filter(value=>validModules.includes(value as never));
-      const active=String(row[column("activo")]??"SI").trim().toUpperCase()!=="NO";
-      if(!full_name||!/^\S+@\S+\.\S+$/.test(email)){failed++;continue;}
-      let teamId=teamName?teamMap.get(teamName.toLowerCase())??null:null;
-      if(teamName&&!teamId){const created=await supabase.from("teams").insert({organization_id:organization.id,name:teamName,description:"Creado desde carga masiva",active:true}).select().single();teamId=created.data?.id??null;if(teamId)teamMap.set(teamName.toLowerCase(),teamId);}
-      const { data, error } = await supabase.functions.invoke("invite-team-member", { body: { organization_id: organization.id, full_name, email, team_id: teamId, role, allowed_modules, active } });
-      if (error || data?.error) failed++; else success++;
-    }
-    setMessage(`Carga finalizada: ${success} usuarios procesados${failed ? ` y ${failed} filas con error` : ""}.`);
-    setInviting(false); setBulkOpen(false); await reloadAll();
-  }
+  async function revokeInvitation(invitation:Invitation){const {error}=await supabase.from("invitations").update({status:"revoked"}).eq("id",invitation.id).eq("organization_id",organization.id);setMessage(error?"No se pudo revocar la invitación.":"Invitación revocada.");if(!error)await loadInvitations();}
 
   async function createOrganization(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); const form = event.currentTarget; const data = new FormData(form);
@@ -544,13 +511,14 @@ function AdminView({ profile, organization, organizations, teams, members, refer
     </div>}
     {adminTab==="usuarios"&&<div className="admin-single">
       <article className="panel admin-section">
-        <PanelHead kicker="PERSONAS Y PERMISOS" title="Usuarios" aside={<div className="user-tools"><button className="text-button" onClick={() => setBulkOpen(!bulkOpen)}>⇧ Carga masiva</button><button className="text-button" onClick={() => setInviteOpen(!inviteOpen)}>＋ Invitar usuario</button></div>} />
-        {bulkOpen && <form className="bulk-form" onSubmit={bulkInvite}><div><strong>Cargar Excel de usuarios</strong><small>Hasta 500 personas por archivo · equipos, roles y módulos</small><a href="/plantilla-carga-usuarios.xlsx" download>↓ Descargar plantilla oficial</a></div><input name="users_file" type="file" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" required /><button className="primary compact" disabled={inviting}>{inviting ? "Procesando..." : "Cargar usuarios"}</button></form>}
+        <PanelHead kicker="PERSONAS Y PERMISOS" title="Usuarios" aside={<div className="user-tools"><button className="text-button" onClick={() => setInviteOpen(!inviteOpen)}>＋ Crear invitación</button></div>} />
         {inviteOpen && <form className="invite-form" onSubmit={inviteMember}>
           <div><label>Nombre completo<input name="full_name" required placeholder="Ana Páez" /></label><label>Correo electrónico<input name="email" required type="email" placeholder="ana@correo.com" /></label></div>
           <div><label>Equipo<select name="team_id"><option value="">Sin equipo</option>{teams.map((team) => <option value={team.id} key={team.id}>{team.name}</option>)}</select></label><label>Rol<select name="role" defaultValue="territorio">{Object.entries(roleLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label></div>
-          <div className="invite-actions"><button type="button" onClick={() => setInviteOpen(false)}>Cancelar</button><button className="primary compact" disabled={inviting}>{inviting ? "Enviando..." : "Enviar invitación"}</button></div>
+          <div className="invite-actions"><button type="button" onClick={() => setInviteOpen(false)}>Cancelar</button><button className="primary compact" disabled={inviting}>{inviting ? "Generando..." : "Generar enlace"}</button></div>
         </form>}
+        {generatedLink&&<div className="generated-invite"><div><strong>Enlace listo para enviar</strong><small>Vence en 7 días y funciona una sola vez.</small></div><input readOnly value={generatedLink}/><button className="primary compact" onClick={()=>{void navigator.clipboard.writeText(generatedLink);setMessage("Enlace copiado.")}}>Copiar enlace</button></div>}
+        {invitations.length>0&&<div className="invitation-list">{invitations.map(invitation=><div key={invitation.id}><span>{invitation.full_name.slice(0,1).toUpperCase()}</span><div><strong>{invitation.full_name}</strong><small>{invitation.email} · {invitation.status==="pending"?"Pendiente":invitation.status==="used"?"Utilizada":"Revocada"}</small></div><em>{new Date(invitation.expires_at_ms).toLocaleDateString("es-AR")}</em>{invitation.status==="pending"&&<><button onClick={()=>{const link=`${window.location.origin}/?invite=${invitation.id}`;setGeneratedLink(link);void navigator.clipboard.writeText(link);setMessage("Enlace copiado.")}}>Copiar</button><button className="member-delete" onClick={()=>revokeInvitation(invitation)}>Revocar</button></>}</div>)}</div>}
         <div className="member-list">{members.map((member) => <div className={!member.active ? "member-disabled" : ""} key={member.user_id}>
           <span className="avatar">{(member.profiles?.full_name ?? "U").split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase()}</span>
           <div><strong>{member.profiles?.full_name}</strong><small>{member.active ? "Usuario habilitado" : "Acceso desactivado"}</small></div>
@@ -899,21 +867,14 @@ export default function Home() {
   }, []);
   useEffect(() => {
     if (!session) return;
-    let timer: ReturnType<typeof setTimeout>;
-    const reset = () => {
-      clearTimeout(timer);
-      timer = setTimeout(() => void supabase.auth.signOut(), 30 * 60 * 1000);
-    };
-    const events = ["pointerdown", "keydown", "touchstart"];
-    events.forEach((event) => window.addEventListener(event, reset, { passive: true }));
-    reset();
-    return () => { clearTimeout(timer); events.forEach((event) => window.removeEventListener(event, reset)); };
-  }, [session]);
-  useEffect(() => {
-    if (!session) return;
     const timer = window.setTimeout(() => {
       setLoading(true);
       void (async () => {
+        const inviteToken=new URLSearchParams(window.location.search).get("invite");
+        if(inviteToken){
+          const redeemed=await supabase.invitations.redeem(inviteToken);
+          if(!redeemed.error)window.history.replaceState({},"",window.location.pathname);
+        }
         const profileResult = await supabase.from("profiles").select("id,full_name,role,active,is_platform_admin").eq("id", session.user.id).maybeSingle();
         let currentProfile = profileResult.data as Profile | null;
         const isBootstrapAdmin = session.user.email?.toLowerCase() === "emilianovillagra@gmail.com";
