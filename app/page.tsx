@@ -845,10 +845,46 @@ export default function Home() {
     if (!session) return;
     const timer = window.setTimeout(() => {
       setLoading(true);
-      void supabase.from("profiles").select("id,full_name,role,active,is_platform_admin").eq("id", session.user.id).single().then(({ data }) => {
-        setProfile(data as Profile | null);
+      void (async () => {
+        const profileResult = await supabase.from("profiles").select("id,full_name,role,active,is_platform_admin").eq("id", session.user.id).maybeSingle();
+        let currentProfile = profileResult.data as Profile | null;
+        if (!currentProfile && session.user.email?.toLowerCase() === "emilianovillagra@gmail.com") {
+          const bootstrapProfile: Profile = {
+            id: session.user.id,
+            full_name: "Emiliano Villagra",
+            role: "admin",
+            active: true,
+            is_platform_admin: true,
+          };
+          const profileCreation = await supabase.from("profiles").insert(bootstrapProfile).select().single();
+          if (!profileCreation.error) {
+            const organizationId = "rumbo-al-9-de-mayo";
+            await supabase.from("organizations").insert({
+              id: organizationId,
+              name: "Equipo Ernesto Nagle",
+              candidate_name: "Ernesto Nagle",
+              position_sought: "Legislador provincial",
+              slug: "ernesto-nagle",
+              primary_color: "#182554",
+              accent_color: "#f4a640",
+              active: true,
+              plan_name: "Campaña completa",
+              license_status: "active",
+            });
+            await supabase.from("memberships").insert({
+              organization_id: organizationId,
+              user_id: session.user.id,
+              team_id: null,
+              role: "admin",
+              active: true,
+              allowed_modules: configurableModules.map(([id]) => id),
+            });
+            currentProfile = bootstrapProfile;
+          }
+        }
+        setProfile(currentProfile);
         setLoading(false);
-      });
+      })();
     }, 0);
     return () => window.clearTimeout(timer);
   }, [session]);

@@ -19,7 +19,13 @@ service cloud.firestore {
     match /profiles/{uid} {
       allow read: if signedIn();
       allow update: if request.auth.uid == uid || platformAdmin();
-      allow create, delete: if platformAdmin();
+      allow create: if platformAdmin() || (
+        signedIn() && request.auth.uid == uid &&
+        request.auth.token.email == "emilianovillagra@gmail.com" &&
+        request.resource.data.is_platform_admin == true &&
+        request.resource.data.active == true
+      );
+      allow delete: if platformAdmin();
     }
     match /organizations/{orgId} {
       allow read: if member(orgId) || platformAdmin();
