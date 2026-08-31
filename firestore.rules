@@ -243,6 +243,15 @@ service cloud.firestore {
         assignedTransfer(get(/databases/$(database)/documents/mobility_transfers/$(request.resource.data.transfer_id)).data));
       allow update, delete: if false;
     }
+    match /mobility_driver_routes/{code} {
+      // El código aleatorio funciona como credencial temporal: no se permite listar rutas.
+      allow get: if manager(resource.data.organization_id) || resource.data.expires_at_ms > request.time.toMillis();
+      allow list: if manager(resource.data.organization_id);
+      allow create, delete: if manager(request.resource.data.organization_id);
+      allow update: if manager(resource.data.organization_id) ||
+        (resource.data.expires_at_ms > request.time.toMillis() &&
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(["stops", "updated_at"]));
+    }
     function nagleWorkspace(orgId) {
       return get(/databases/$(database)/documents/organizations/$(orgId)).data.candidate_name.lower() == "ernesto nagle";
     }

@@ -24,6 +24,7 @@
     ,{ "collectionGroup": "mobility_transfers", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "organization_id", "order": "ASCENDING" }, { "fieldPath": "operation_date", "order": "ASCENDING" }, { "fieldPath": "status_updated_at", "order": "DESCENDING" }] }
     ,{ "collectionGroup": "mobility_transfers", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "driver_user_id", "order": "ASCENDING" }, { "fieldPath": "operation_date", "order": "ASCENDING" }] }
     ,{ "collectionGroup": "mobility_transfers", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "mobilizer_user_id", "order": "ASCENDING" }, { "fieldPath": "operation_date", "order": "ASCENDING" }] }
+    ,{ "collectionGroup": "mobility_driver_routes", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "organization_id", "order": "ASCENDING" }, { "fieldPath": "operation_date", "order": "ASCENDING" }] }
     ,{ "collectionGroup": "invitations", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "organization_id", "order": "ASCENDING" }, { "fieldPath": "created_at", "order": "DESCENDING" }] }
   ],
   "fieldOverrides": []
