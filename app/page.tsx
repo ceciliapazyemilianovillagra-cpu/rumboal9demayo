@@ -434,6 +434,8 @@ function AdminView({ profile, organization, organizations, teams, members, refer
   const [authorizationOpen, setAuthorizationOpen] = useState(false);
   const [authorizing, setAuthorizing] = useState(false);
   const [importingUsers, setImportingUsers] = useState(false);
+  const [targetOrganizationId,setTargetOrganizationId]=useState(organization.id);
+  const [targetTeams,setTargetTeams]=useState<Team[]>(teams);
   const [message, setMessage] = useState("");
   const [generatedLink,setGeneratedLink]=useState("");
   const [authorizations,setAuthorizations]=useState<AuthorizedAccess[]>([]);
@@ -441,6 +443,8 @@ function AdminView({ profile, organization, organizations, teams, members, refer
   const [publicLinks,setPublicLinks]=useState<PublicLink[]>([]);
   const loadAuthorizations=useCallback(async()=>{const result=await supabase.from("authorized_access").select("*").eq("organization_id",organization.id).order("created_at",{ascending:false}).limit(500);setAuthorizations(result.error?[]:(result.data??[]) as AuthorizedAccess[]);},[organization.id]);
   useEffect(()=>{void loadAuthorizations();},[loadAuthorizations]);
+  useEffect(()=>{setTargetOrganizationId(organization.id);},[organization.id]);
+  useEffect(()=>{void (async()=>{const result=await supabase.from("teams").select("*").eq("organization_id",targetOrganizationId).order("name");setTargetTeams((result.data??[]) as Team[]);})();},[targetOrganizationId]);
   const loadPublicLinks=useCallback(async()=>{const result=await supabase.from("public_links").select("*").eq("organization_id",organization.id).order("created_at",{ascending:false}).limit(100);setPublicLinks(result.error?[]:(result.data??[]) as PublicLink[]);},[organization.id]);
   useEffect(()=>{void loadPublicLinks();},[loadPublicLinks]);
   async function createPublicLink(formType:"gestion"|"eventos"|"logistica"|"fiscalizacion"){const id=`${crypto.randomUUID().replaceAll("-","")}${crypto.randomUUID().replaceAll("-","")}`;const {error}=await supabase.from("public_links").insert({id,organization_id:organization.id,module:formType,label:`${formType} · ${organization.candidate_name}`,active:true,expires_at_ms:Date.now()+180*24*60*60*1000,created_by:profile.id});if(error)setMessage("No se pudo crear el enlace.");else{const url=`${window.location.origin}/?public=${id}&form=${formType}`;setGeneratedLink(url);void navigator.clipboard.writeText(url);setMessage("Enlace creado y copiado. Podés enviarlo o convertirlo en QR.");await loadPublicLinks();}}
@@ -477,10 +481,11 @@ function AdminView({ profile, organization, organizations, teams, members, refer
     const data = new FormData(form);
     setAuthorizing(true); setMessage("");
     const role=String(data.get("role")||"territorio") as Role;
+    const targetOrganization=String(data.get("organization_id")||organization.id);
     const defaults=role==="coordinacion"?configurableModules.map(([id])=>id):role==="territorio"?["sedes","gestion","agenda","eventos"]:role==="finanzas"?["presupuesto","agenda","logistica"]:["agenda"];
     const email=String(data.get("email")||"").trim().toLowerCase();
     const { error } = await supabase.from("authorized_access").insert({
-      id:email, organization_id:organization.id,full_name:String(data.get("full_name")||"").trim().slice(0,120),email,team_id:data.get("team_id")||null,role,allowed_modules:defaults,active:true,created_by:profile.id,created_at:new Date().toISOString(),
+      id:email, organization_id:targetOrganization,full_name:String(data.get("full_name")||"").trim().slice(0,120),email,team_id:data.get("team_id")||null,role,allowed_modules:(data.getAll("modules").map(String).filter(Boolean).length?data.getAll("modules").map(String):defaults),active:true,created_by:profile.id,created_at:new Date().toISOString(),
     });
     if (error) setMessage("No se pudo autorizar el correo. Verificá que sea correcto.");
     else {
@@ -552,11 +557,14 @@ function AdminView({ profile, organization, organizations, teams, members, refer
         if(["no","false","0","inactivo"].includes(active)){skipped++;continue;}
         const requestedRole=field(row,"rol").toLowerCase() as Role;
         const role=acceptedRoles.includes(requestedRole)?requestedRole:"territorio";
+        const space=field(row,"espacio").toLocaleLowerCase("es-AR");
+        const target=organizations.find(item=>[item.id,item.name,item.candidate_name,item.slug].some(value=>value.toLocaleLowerCase("es-AR")===space))??organizations.find(item=>item.id===organization.id)!;
         const teamName=field(row,"equipo").toLocaleLowerCase("es-AR");
-        const team=teams.find(item=>item.name.toLocaleLowerCase("es-AR")===teamName);
+        const loadedTeams=target.id===organization.id?teams:((await supabase.from("teams").select("*").eq("organization_id",target.id)).data??[]) as Team[];
+        const team=loadedTeams.find(item=>item.name.toLocaleLowerCase("es-AR")===teamName);
         const defaults=role==="coordinacion"?configurableModules.map(([id])=>id):role==="territorio"?["sedes","gestion","agenda","eventos"]:role==="finanzas"?["presupuesto","agenda","logistica"]:["agenda"];
         const modules=field(row,"modulos").split(/[,;|]/).map(value=>value.trim().toLowerCase()).filter(value=>configurableModules.some(([id])=>id===value));
-        const result=await supabase.from("authorized_access").insert({id:email,organization_id:organization.id,full_name:field(row,"nombre_completo")||email,email,team_id:team?.id??null,role,allowed_modules:modules.length?modules:defaults,active:true,created_by:profile.id,created_at:new Date().toISOString()});
+        const result=await supabase.from("authorized_access").insert({id:email,organization_id:target.id,full_name:field(row,"nombre_completo")||email,email,team_id:team?.id??null,role,allowed_modules:modules.length?modules:defaults,active:true,created_by:profile.id,created_at:new Date().toISOString()});
         if(result.error)skipped++;else added++;
       }
       await loadAuthorizations();
@@ -601,7 +609,8 @@ function AdminView({ profile, organization, organizations, teams, members, refer
         <p className="form-message">Un solo enlace para todos: cada persona ingresa su correo, crea su clave una vez y sólo accede si este correo fue autorizado aquí.</p>
         {authorizationOpen && <form className="invite-form" onSubmit={authorizeMember}>
           <div><label>Nombre completo<input name="full_name" required placeholder="Ana Páez" /></label><label>Correo electrónico<input name="email" required type="email" placeholder="ana@correo.com" /></label></div>
-          <div><label>Equipo<select name="team_id"><option value="">Sin equipo</option>{teams.map((team) => <option value={team.id} key={team.id}>{team.name}</option>)}</select></label><label>Rol<select name="role" defaultValue="territorio">{Object.entries(roleLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label></div>
+          <div><label>Espacio político<select name="organization_id" value={targetOrganizationId} onChange={event=>setTargetOrganizationId(event.target.value)}>{organizations.map(item=><option value={item.id} key={item.id}>{item.name} · {item.candidate_name}</option>)}</select></label><label>Equipo<select name="team_id"><option value="">Sin equipo</option>{targetTeams.map((team) => <option value={team.id} key={team.id}>{team.name}</option>)}</select></label></div>
+          <div><label>Rol<select name="role" defaultValue="territorio">{Object.entries(roleLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label><label>Módulos habilitados<span className="module-permissions">{configurableModules.map(([id,label])=><label key={id}><input name="modules" type="checkbox" value={id} defaultChecked={["sedes","gestion","agenda","eventos"].includes(id)}/>{label}</label>)}</span></label></div>
           <div className="invite-actions"><button type="button" onClick={() => setAuthorizationOpen(false)}>Cancelar</button><button className="primary compact" disabled={authorizing}>{authorizing ? "Autorizando..." : "Autorizar correo"}</button></div>
         </form>}
         {authorizations.length>0&&<div className="invitation-list">{authorizations.map(authorization=><div key={authorization.id}><span>{authorization.full_name.slice(0,1).toUpperCase()}</span><div><strong>{authorization.full_name}</strong><small>{authorization.email} · {authorization.active?"Autorizado":"Desactivado"}</small></div><em>{teams.find(team=>team.id===authorization.team_id)?.name||"Sin equipo"}</em><button className={`member-toggle ${authorization.active?"deactivate":"activate"}`} onClick={()=>void toggleAuthorization(authorization)}>{authorization.active?"Desactivar":"Activar"}</button></div>)}</div>}
@@ -928,7 +937,8 @@ export default function Home() {
       void (async () => {
         let profileResult = await supabase.from("profiles").select("id,full_name,role,active,is_platform_admin").eq("id", session.user.id).maybeSingle();
         let currentProfile = profileResult.data as Profile | null;
-        if (!currentProfile) {
+        const membershipCheck=await supabase.from("memberships").select("organization_id").eq("user_id",session.user.id).limit(1);
+        if (!currentProfile || (!currentProfile.is_platform_admin && !(membershipCheck.data??[]).length)) {
           await supabase.access.activateAuthorizedAccess();
           profileResult = await supabase.from("profiles").select("id,full_name,role,active,is_platform_admin").eq("id", session.user.id).maybeSingle();
           currentProfile = profileResult.data as Profile | null;

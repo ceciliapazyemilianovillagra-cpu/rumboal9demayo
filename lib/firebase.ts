@@ -298,7 +298,9 @@ export const firebase = {
         const authorization = authorizationSnapshot.data();
         const membershipId = `${authorization.organization_id}_${user.uid}`;
         const batch = writeBatch(firestore);
-        batch.set(doc(firestore, "profiles", user.uid), {
+        const profileRef = doc(firestore, "profiles", user.uid);
+        const existingProfile = await getDoc(profileRef);
+        if (!existingProfile.exists()) batch.set(profileRef, {
           id: user.uid, full_name: authorization.full_name || email, email, role: authorization.role || "consulta",
           active: true, is_platform_admin: false, authorization_email: email, updated_at: new Date().toISOString(),
         }, { merge: true });
