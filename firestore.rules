@@ -115,7 +115,8 @@ service cloud.firestore {
       allow get: if platformAdmin() || (signedIn() && uid == request.auth.uid);
       allow list: if platformAdmin();
       allow create: if signedIn() && uid == request.auth.uid && request.resource.data.user_id == request.auth.uid &&
-        request.resource.data.email == request.auth.token.email && request.resource.data.status == "pending";
+        request.resource.data.email == request.auth.token.email &&
+        (request.resource.data.status == "pending" || (validAuthorization() && request.resource.data.status == "approved"));
       allow update: if platformAdmin() || (signedIn() && uid == request.auth.uid && validAuthorization() &&
         request.resource.data.user_id == request.auth.uid && request.resource.data.email == request.auth.token.email &&
         request.resource.data.status == "approved");
