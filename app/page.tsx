@@ -915,9 +915,13 @@ export default function Home() {
     const timer = window.setTimeout(() => {
       setLoading(true);
       void (async () => {
-        await supabase.access.activateAuthorizedAccess();
-        const profileResult = await supabase.from("profiles").select("id,full_name,role,active,is_platform_admin").eq("id", session.user.id).maybeSingle();
+        let profileResult = await supabase.from("profiles").select("id,full_name,role,active,is_platform_admin").eq("id", session.user.id).maybeSingle();
         let currentProfile = profileResult.data as Profile | null;
+        if (!currentProfile) {
+          await supabase.access.activateAuthorizedAccess();
+          profileResult = await supabase.from("profiles").select("id,full_name,role,active,is_platform_admin").eq("id", session.user.id).maybeSingle();
+          currentProfile = profileResult.data as Profile | null;
+        }
         const isBootstrapAdmin = session.user.email?.toLowerCase() === "emilianovillagra@gmail.com";
         if (!currentProfile && isBootstrapAdmin) {
           const bootstrapProfile: Profile = {
