@@ -37,6 +37,7 @@
     "drizzle",
     "examples",
     "supabase/functions",
+    "functions",
     "worker"
   ]
 }

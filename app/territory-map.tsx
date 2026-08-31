@@ -13,13 +13,16 @@ export type MapPoint = {
   longitude: number;
   title: string;
   detail: string;
-  kind: "sede" | "reclamo" | "referente";
+  kind: "sede" | "centro_comunitario" | "club" | "fundacion" | "escuela" | "cooperativa" | "punto_encuentro";
 };
+const locationKinds: {id:MapPoint["kind"];label:string;color:string}[] = [
+  {id:"sede",label:"Sedes",color:"#2d2d49"},{id:"centro_comunitario",label:"Centros comunitarios",color:"#3f8db4"},{id:"club",label:"Clubes",color:"#2d8f70"},{id:"fundacion",label:"Fundaciones",color:"#925da8"},{id:"escuela",label:"Escuelas",color:"#d66253"},{id:"cooperativa",label:"Cooperativas",color:"#c48728"},{id:"punto_encuentro",label:"Puntos de encuentro",color:"#6b7280"},
+];
 
 export function TerritoryMap({ points, onCreateHeadquarters }: { points: MapPoint[]; onCreateHeadquarters?: (location:{latitude:number;longitude:number})=>void }) {
   const elementRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<LeafletMap | null>(null);
-  const [visibleKinds,setVisibleKinds]=useState<MapPoint["kind"][]>(["sede","reclamo","referente"]);
+  const [visibleKinds,setVisibleKinds]=useState<MapPoint["kind"][]>(locationKinds.map(item=>item.id));
   const [picked,setPicked]=useState<[number,number]|null>(null);
   const [mapMessage,setMapMessage]=useState("Tocá el mapa para consultar una coordenada.");
   const visiblePoints=useMemo(()=>points.filter(point=>visibleKinds.includes(point.kind)),[points,visibleKinds]);
@@ -44,7 +47,7 @@ export function TerritoryMap({ points, onCreateHeadquarters }: { points: MapPoin
       streets.addTo(map);
       L.control.layers({"Calles y nombres":streets,"Mapa claro":clear,"Vista satelital":satellite},undefined,{position:"topright",collapsed:true}).addTo(map);
 
-      const colors = { sede: "#2d2d49", reclamo: "#d66253", referente: "#2d8f70" };
+      const colors = Object.fromEntries(locationKinds.map(item=>[item.id,item.color])) as Record<MapPoint["kind"],string>;
       visiblePoints.forEach((point) => {
         L.circleMarker([point.latitude, point.longitude], {
           radius: 9, color: "#fff", weight: 3, fillColor: colors[point.kind], fillOpacity: 1,
@@ -84,13 +87,11 @@ export function TerritoryMap({ points, onCreateHeadquarters }: { points: MapPoin
 
   return <div className="interactive-map">
     <div className="map-filters" aria-label="Filtros del mapa">
-      <button className={visibleKinds.includes("sede")?"active":""} onClick={()=>toggleKind("sede")}><i className="sede"/> Sedes <b>{points.filter(point=>point.kind==="sede").length}</b></button>
-      <button className={visibleKinds.includes("reclamo")?"active":""} onClick={()=>toggleKind("reclamo")}><i className="reclamo"/> Reclamos <b>{points.filter(point=>point.kind==="reclamo").length}</b></button>
-      <button className={visibleKinds.includes("referente")?"active":""} onClick={()=>toggleKind("referente")}><i className="referente"/> Referentes <b>{points.filter(point=>point.kind==="referente").length}</b></button>
+      {locationKinds.map(kind=><button key={kind.id} className={visibleKinds.includes(kind.id)?"active":""} onClick={()=>toggleKind(kind.id)}><i style={{background:kind.color}}/> {kind.label} <b>{points.filter(point=>point.kind===kind.id).length}</b></button>)}
       <button type="button" className="map-home" onClick={()=>mapRef.current?.setView(SAN_MIGUEL_DE_TUCUMAN,TUCUMAN_ZOOM)}>⌖ San Miguel de Tucumán</button>
     </div>
-    <div className="leaflet-map" ref={elementRef} aria-label="Mapa territorial interactivo de sedes, reclamos y referentes" />
-    <div className="map-tools"><span>{mapMessage}</span><div><button type="button" onClick={locateMe}>◎ Mi ubicación</button><button type="button" onClick={fitAll}>⊙ Ver todos los puntos</button>{picked&&<button type="button" onClick={()=>void navigator.clipboard.writeText(`${picked[0].toFixed(6)}, ${picked[1].toFixed(6)}`)}>Copiar coordenada</button>}{picked&&onCreateHeadquarters&&<button type="button" className="map-create-headquarters" onClick={()=>onCreateHeadquarters({latitude:picked[0],longitude:picked[1]})}>＋ Crear sede aquí</button>}</div></div>
+    <div className="leaflet-map" ref={elementRef} aria-label="Mapa interactivo de locaciones" />
+    <div className="map-tools"><span>{mapMessage}</span><div><button type="button" onClick={locateMe}>◎ Mi ubicación</button><button type="button" onClick={fitAll}>⊙ Ver todos los puntos</button>{picked&&<button type="button" onClick={()=>void navigator.clipboard.writeText(`${picked[0].toFixed(6)}, ${picked[1].toFixed(6)}`)}>Copiar coordenada</button>}{picked&&onCreateHeadquarters&&<button type="button" className="map-create-headquarters" onClick={()=>onCreateHeadquarters({latitude:picked[0],longitude:picked[1]})}>＋ Cargar locación aquí</button>}</div></div>
   </div>;
 }
 

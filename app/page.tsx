@@ -2,8 +2,8 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { firebase as supabase, type Session, type User } from "../lib/firebase";
-import { TerritoryMap, type MapPoint } from "./territory-map";
-import { StaffWorkspace, isNagleWorkspace } from "./staff-workspace";
+import { TerritoryMap } from "./territory-map";
+import { isNagleWorkspace } from "./staff-workspace";
 
 type Role = "admin" | "coordinacion" | "territorio" | "finanzas" | "consulta";
 type Profile = { id: string; full_name: string; role: Role; active: boolean; is_platform_admin: boolean };
@@ -19,8 +19,10 @@ type Member = {
 };
 type Headquarters = {
   id: number; name: string; address: string; circuit: string | null; phone: string | null;
-  team_id: string | null; responsible_user_id: string | null; active: boolean; latitude:number|null; longitude:number|null;
+  team_id: string | null; responsible_user_id: string | null; active: boolean; latitude:number|null; longitude:number|null; location_type?:LocationType;
 };
+type LocationType = "sede"|"centro_comunitario"|"club"|"fundacion"|"escuela"|"cooperativa"|"punto_encuentro";
+const locationTypeLabels:Record<LocationType,string>={sede:"Sede",centro_comunitario:"Centro comunitario",club:"Club",fundacion:"Fundación",escuela:"Escuela",cooperativa:"Cooperativa",punto_encuentro:"Punto de encuentro"};
 type BudgetEntry = {
   id: number; kind: "ingreso" | "gasto" | "compromiso"; category: string;
   description: string; amount: number; occurred_on: string;
@@ -37,7 +39,7 @@ type AuditItem = { id:number; entity_type:string; entity_id:string; action:strin
 type NotificationRead = { id:string; organization_id:string; user_id:string; notification_id:string; read_at:string };
 type CampaignRecord = { id:string; organization_id:string; title:string; status:string; priority:string; responsible_user_id:string|null; scheduled_for:string|null; location:string|null; notes:string|null; created_at:string };
 type Invitation = { id:string; organization_id:string; full_name:string; email:string; team_id:string|null; role:Role; allowed_modules:string[]; status:"pending"|"used"|"revoked"; expires_at_ms:number; created_at:string };
-const configurableModules=[["votantes","Votantes"],["sedes","Sedes"],["presupuesto","Presupuesto"],["gestion","Reclamos y proyectos"],["agenda","Agenda"],["propuestas","Propuestas"],["territorio","Territorio y referentes"],["tareas","Tareas y responsables"],["operativos","Operativos territoriales"],["eventos","Eventos y asistencia"],["comunicacion","Comunicación"],["logistica","Logística"],["fiscalizacion","Fiscalización electoral"]] as const;
+const configurableModules=[["votantes","Votantes"],["sedes","Locaciones"],["presupuesto","Presupuesto"],["gestion","Gestión"],["agenda","Agenda"],["eventos","Eventos"],["logistica","Logística"],["fiscalizacion","Fiscalización electoral"]] as const;
 
 const roleLabels: Record<Role, string> = {
   admin: "Administrador", coordinacion: "Coordinación", territorio: "Territorio",
@@ -224,43 +226,46 @@ function Budget({ user, organization, entries, reload }: {
   </section>;
 }
 
-function HeadquartersView({ organization, teams, members, items, reload, initialLocation=null, embedded=false }: {
-  organization: Organization; teams: Team[]; members: Member[]; items: Headquarters[]; reload: () => Promise<void>; initialLocation?:{latitude:number;longitude:number}|null; embedded?:boolean;
+function LocationsView({ organization, teams, members, items, reload, initialLocation=null }: {
+  organization: Organization; teams: Team[]; members: Member[]; items: Headquarters[]; reload: () => Promise<void>; initialLocation?:{latitude:number;longitude:number}|null;
 }) {
   const [open, setOpen] = useState(false);
   const [message, setMessage] = useState("");
+  const [pickedLocation,setPickedLocation]=useState<{latitude:number;longitude:number}|null>(initialLocation);
   useEffect(()=>{if(initialLocation){setOpen(true);window.setTimeout(()=>document.getElementById("headquarters-entry-form")?.scrollIntoView({behavior:"smooth",block:"center"}),80);}},[initialLocation]);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); const form = event.currentTarget; const data = new FormData(form);
     const { error } = await supabase.from("headquarters").insert({
-      organization_id: organization.id, name: data.get("name"), address: data.get("address"),
+      organization_id: organization.id, name: data.get("name"), address: data.get("address"), location_type:data.get("location_type")||"sede",
       circuit: data.get("circuit") || null, phone: data.get("phone") || null,
       team_id: data.get("team_id") || null, responsible_user_id: data.get("responsible_user_id") || null,
       latitude:data.get("latitude")||null,longitude:data.get("longitude")||null,
     });
-    if (error) setMessage("No se pudo crear la sede.");
+    if (error) setMessage(`No se pudo crear la locación: ${error.message}`);
     else { form.reset(); setOpen(false); await reload(); }
   }
   return <section>
-    <ModuleTitle kicker="PRESENCIA TERRITORIAL" title={embedded?"Sedes en el territorio":"Sedes"} subtitle={embedded?"Creá una sede desde aquí o seleccioná primero su punto exacto en el mapa.":"Cada sede queda vinculada a un equipo y a una persona responsable."}>
-      <button className="primary compact" onClick={() => setOpen(!open)}>＋ Nueva sede</button>
+    <ModuleTitle kicker="MAPA Y PUNTOS DE REFERENCIA" title="Locaciones" subtitle="Sedes, centros comunitarios, clubes, fundaciones, escuelas, cooperativas y puntos de encuentro.">
+      <button className="primary compact" onClick={() => { setPickedLocation(null); setOpen(!open); }}>＋ Nueva locación</button>
     </ModuleTitle>
+    <article className="panel territory-map-panel territory-map-primary"><PanelHead kicker="MAPA INTERACTIVO" title="Ubicaciones registradas" aside={`${items.length} locaciones`}/><TerritoryMap points={items.filter(item=>item.latitude!==null&&item.longitude!==null).map(item=>({id:`l-${item.id}`,latitude:Number(item.latitude),longitude:Number(item.longitude),title:item.name,detail:`${locationTypeLabels[item.location_type??"sede"]} · ${item.address}`,kind:item.location_type??"sede"}))} onCreateHeadquarters={location=>{setPickedLocation(location);setOpen(true);window.setTimeout(()=>document.getElementById("headquarters-entry-form")?.scrollIntoView({behavior:"smooth",block:"center"}),80);}}/></article>
     {open && <form id="headquarters-entry-form" className="entry-form panel" onSubmit={submit}>
-      <div className="form-head"><div><p className="kicker">NUEVA SEDE</p><h2>Datos del lugar</h2></div><button type="button" onClick={() => setOpen(false)}>×</button></div>
+      <div className="form-head"><div><p className="kicker">NUEVA LOCACIÓN</p><h2>Datos del lugar</h2></div><button type="button" onClick={() => setOpen(false)}>×</button></div>
       <div className="form-grid">
-        <label className="wide">Nombre<input name="name" required placeholder="Sede Barrio Norte" /></label>
+        <label>Tipo<select name="location_type" defaultValue="sede">{Object.entries(locationTypeLabels).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label>
+        <label>Nombre<input name="name" required placeholder="Ej.: Club Barrio Norte" /></label>
         <label className="wide">Dirección<input name="address" required placeholder="Calle y número" /></label>
         <label>Circuito<input name="circuit" placeholder="Opcional" /></label>
         <label>Teléfono<input name="phone" placeholder="Opcional" /></label>
         <label>Equipo<select name="team_id"><option value="">Sin asignar</option>{teams.map((t) => <option value={t.id} key={t.id}>{t.name}</option>)}</select></label>
         <label>Responsable<select name="responsible_user_id"><option value="">Sin asignar</option>{members.map((m) => <option value={m.user_id} key={m.user_id}>{m.profiles?.full_name}</option>)}</select></label>
-        <LocationInputs initialLocation={initialLocation}/>
+        <LocationInputs initialLocation={pickedLocation}/>
       </div>
       {message && <p className="form-message">{message}</p>}
-      <div className="form-actions"><button type="button" onClick={() => setOpen(false)}>Cancelar</button><button className="primary compact">Crear sede</button></div>
+      <div className="form-actions"><button type="button" onClick={() => setOpen(false)}>Cancelar</button><button className="primary compact">Guardar locación</button></div>
     </form>}
-    {items.length === 0 ? <article className="panel"><Empty title="Todavía no hay sedes" text="Cuando crees una sede vas a poder ver qué equipo trabaja allí y quién es responsable." /></article> :
-      <div className="cards-list">{items.map((item) => <article className="panel sede-card" key={item.id}><span className="card-symbol">⌂</span><div><p className="kicker">SEDE ACTIVA</p><h2>{item.name}</h2><span>{item.address}</span><small>{teams.find((t) => t.id === item.team_id)?.name ?? "Sin equipo"} · {members.find((m) => m.user_id === item.responsible_user_id)?.profiles?.full_name ?? "Sin responsable"}</small></div></article>)}</div>}
+    {items.length === 0 ? <article className="panel"><Empty title="Todavía no hay locaciones" text="Cargá la primera ubicación o elegí su punto exacto directamente en el mapa." /></article> :
+      <div className="cards-list">{items.map((item) => <article className="panel sede-card" key={item.id}><span className="card-symbol">⌂</span><div><p className="kicker">{locationTypeLabels[item.location_type??"sede"].toUpperCase()}</p><h2>{item.name}</h2><span>{item.address}</span><small>{teams.find((t) => t.id === item.team_id)?.name ?? "Sin equipo"} · {members.find((m) => m.user_id === item.responsible_user_id)?.profiles?.full_name ?? "Sin responsable"}</small></div></article>)}</div>}
   </section>;
 }
 
@@ -311,8 +316,8 @@ function VotersView({user,organization,items,voters,reload}:{user:User;organizat
       <article><b>{new Set(voters.map(v=>v.circuit).filter(Boolean)).size}</b><span>circuitos</span></article>
     </div>
     <article className="panel voter-plan">
-      <div className="voter-hero"><span>1M+</span><div><p className="kicker">LISTO PARA ESCALAR</p><h2>Del padrón al trabajo territorial</h2><p>La demostración usa pocos registros ficticios, pero la estructura está preparada para importar, buscar y organizar padrones de gran tamaño.</p></div></div>
-      <form className="voter-import-form" onSubmit={prepareImport}><div><strong>Preparar un padrón</strong><span>Analiza encabezados y formato sin subir datos sensibles todavía.</span></div><input name="padron" type="file" accept=".csv,.xlsx" required/><button className="primary compact" disabled={busy}>{busy?"Analizando...":"Analizar archivo"}</button></form>
+      <div className="voter-hero"><div><p className="kicker">IMPORTACIÓN PREPARADA</p><h2>Preparar el padrón</h2><p>Descargá el modelo, completalo cuando recibas la información oficial y analizá sus columnas antes de incorporar datos.</p><a className="pdf-button" href="/plantilla-padron.xlsx" download>↓ Descargar modelo Excel</a></div></div>
+      <form className="voter-import-form" onSubmit={prepareImport}><div><strong>Analizar un padrón</strong><span>Verifica encabezados y formato sin incorporar datos sensibles todavía.</span></div><input name="padron" type="file" accept=".csv,.xlsx" required/><button className="primary compact" disabled={busy}>{busy?"Analizando...":"Analizar archivo"}</button></form>
       {message&&<div className="info-banner">{message}</div>}
     </article>
     <article className="panel voter-directory">
@@ -423,7 +428,7 @@ function AdminView({ profile, organization, organizations, teams, members, refer
     else await reloadAll();
   }
   async function toggleModule(member:Member,moduleId:string){
-    const defaults=member.role==="coordinacion"?configurableModules.map(([id])=>id):member.role==="territorio"?["sedes","gestion","agenda","propuestas","territorio"]:member.role==="finanzas"?["presupuesto","agenda"]:["agenda"];
+    const defaults=member.role==="coordinacion"?configurableModules.map(([id])=>id):member.role==="territorio"?["sedes","gestion","agenda","eventos"]:member.role==="finanzas"?["presupuesto","agenda","logistica"]:["agenda"];
     const current=member.allowed_modules??defaults;
     const next=current.includes(moduleId)?current.filter(id=>id!==moduleId):[...current,moduleId];
     const {error}=await supabase.from("memberships").update({allowed_modules:next}).eq("organization_id",organization.id).eq("user_id",member.user_id);
@@ -436,7 +441,7 @@ function AdminView({ profile, organization, organizations, teams, members, refer
     const data = new FormData(form);
     setInviting(true); setMessage("");
     const role=String(data.get("role")||"territorio") as Role;
-    const defaults=role==="coordinacion"?configurableModules.map(([id])=>id):role==="territorio"?["sedes","gestion","agenda","propuestas","territorio","tareas","operativos","eventos"]:role==="finanzas"?["presupuesto","agenda","logistica"]:["agenda"];
+    const defaults=role==="coordinacion"?configurableModules.map(([id])=>id):role==="territorio"?["sedes","gestion","agenda","eventos"]:role==="finanzas"?["presupuesto","agenda","logistica"]:["agenda"];
     const token=`${crypto.randomUUID().replaceAll("-","")}${crypto.randomUUID().replaceAll("-","")}`;
     const { error } = await supabase.from("invitations").insert({
       id:token,organization_id:organization.id,full_name:String(data.get("full_name")||"").trim().slice(0,120),email:String(data.get("email")||"").trim().toLowerCase(),team_id:data.get("team_id")||null,role,allowed_modules:defaults,status:"pending",expires_at_ms:Date.now()+7*24*60*60*1000,created_by:profile.id,
@@ -494,7 +499,7 @@ function AdminView({ profile, organization, organizations, teams, members, refer
   }
 
   return <section>
-    <ModuleTitle kicker="CONFIGURACIÓN CENTRAL" title="Administración" subtitle="Configuración ordenada por espacio, equipos, accesos e historial." />
+    <ModuleTitle kicker="CONFIGURACIÓN CENTRAL" title="Configuración" subtitle="Configuración ordenada por espacio, equipos, accesos e historial." />
     <nav className="admin-tabs" aria-label="Secciones de administración">
       <button className={adminTab==="espacio"?"active":""} onClick={()=>setAdminTab("espacio")}><span>1</span> Espacio político</button>
       <button className={adminTab==="equipos"?"active":""} onClick={()=>setAdminTab("equipos")}><span>2</span> Equipos</button>
@@ -535,7 +540,7 @@ function AdminView({ profile, organization, organizations, teams, members, refer
           <select aria-label="Equipo" disabled={!member.active} value={member.team_id ?? ""} onChange={(e) => updateMember(member.user_id, "team_id", e.target.value)}><option value="">Sin equipo</option>{teams.map((t) => <option value={t.id} key={t.id}>{t.name}</option>)}</select>
           <select aria-label="Rol" disabled={!member.active} value={member.role} onChange={(e) => updateMember(member.user_id, "role", e.target.value)}>{Object.entries(roleLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select>
           <div className="member-actions"><button className={`member-toggle ${member.active ? "deactivate" : "activate"}`} disabled={member.user_id === profile.id} onClick={() => toggleMember(member)}>{member.active ? "Desactivar" : "Activar"}</button><button className="member-delete" disabled={member.user_id === profile.id} onClick={() => removeMember(member)}>Borrar</button></div>
-          {member.role!=="admin"&&<div className="module-permissions">{configurableModules.map(([id,label])=><label key={id}><input type="checkbox" checked={(member.allowed_modules??(member.role==="coordinacion"?configurableModules.map(([x])=>x):member.role==="territorio"?["sedes","gestion","agenda","propuestas","territorio"]:member.role==="finanzas"?["presupuesto","agenda"]:["agenda"])).includes(id)} onChange={()=>toggleModule(member,id)}/>{label}</label>)}</div>}
+          {member.role!=="admin"&&<div className="module-permissions">{configurableModules.map(([id,label])=><label key={id}><input type="checkbox" checked={(member.allowed_modules??(member.role==="coordinacion"?configurableModules.map(([x])=>x):member.role==="territorio"?["sedes","gestion","agenda","eventos"]:member.role==="finanzas"?["presupuesto","agenda","logistica"]:["agenda"])).includes(id)} onChange={()=>toggleModule(member,id)}/>{label}</label>)}</div>}
         </div>)}</div>
         <div className="info-banner compact-info">Estos son los usuarios que pueden ingresar al sistema. Cada invitado crea su propia contraseña y recibe solamente los módulos habilitados.</div>
       </article>
@@ -634,7 +639,7 @@ function HomeDashboard({ organization, organizations, canAdmin, selectOrganizati
     {canAdmin && organizations.length > 1 && <div className="home-organization-switch"><label htmlFor="home-organization">Espacio político activo</label><select id="home-organization" value={organization.id} onChange={(e) => selectOrganization(e.target.value)}>{organizations.map((org) => <option value={org.id} key={org.id}>{org.name}</option>)}</select></div>}
     <section className="stats-grid home-kpis">
       <DashboardMetricCard tone="blue" icon="◎" title="Equipo operativo" eyebrow="PERSONAS ACTIVAS" value={String(activeWorkers)} detail={`${teams.length} equipos organizados`} helper="Usuarios y colaboradores territoriales" badge="EQUIPO" progress={workerRate} action="Ver organización" onClick={() => go("admin")}/>
-      <DashboardMetricCard tone="green" icon="⌂" title="Cobertura territorial" eyebrow="SEDES ACTIVAS" value={String(headquarters.length)} detail={`${new Set(referents.map(item=>item.neighborhood).filter(Boolean)).size} barrios con referentes`} helper="Mapa y red territorial actualizados" badge="MAPA" action="Abrir territorio" onClick={() => go("territorio")}/>
+      <DashboardMetricCard tone="green" icon="⌂" title="Cobertura territorial" eyebrow="LOCACIONES ACTIVAS" value={String(headquarters.length)} detail={`${new Set(referents.map(item=>item.neighborhood).filter(Boolean)).size} barrios con referentes`} helper="Mapa y ubicaciones actualizados" badge="MAPA" action="Abrir locaciones" onClick={() => go("sedes")}/>
       <DashboardMetricCard tone="violet" icon="◉" title="Base electoral" eyebrow="VOTANTES DEMO" value={String(voters.length)} detail={`${contactedVoters} contactos trabajados`} helper="Ejemplo ficticio listo para presentar" badge="PADRÓN" progress={voterRate} action="Explorar votantes" onClick={() => go("votantes")}/>
       <DashboardMetricCard tone="amber" icon="$" title="Recursos de campaña" eyebrow="SALDO PROYECTADO" value={money.format(totals.ingreso - totals.gasto - totals.compromiso)} detail={`${entries.length} movimientos registrados`} helper="Ingresos, gastos y compromisos" badge="CONTROL" progress={budgetUse} action="Ver presupuesto" onClick={() => go("presupuesto")}/>
     </section>
@@ -651,7 +656,7 @@ function HomeDashboard({ organization, organizations, canAdmin, selectOrganizati
     </section>
     <section className="quick-section"><div><p className="kicker">ACCESOS RÁPIDOS</p><h2>¿Qué necesitás hacer?</h2></div><div className="quick-grid">
       <button onClick={() => go("admin")}><span>⚙</span><b>Configurar equipos</b><small>Personas, roles y espacios</small></button>
-      <button onClick={() => go("sedes")}><span>⌂</span><b>Crear sede</b><small>Asignar equipo y responsable</small></button>
+      <button onClick={() => go("sedes")}><span>⌂</span><b>Cargar locación</b><small>Asignar tipo, equipo y responsable</small></button>
       <button onClick={() => go("presupuesto")}><span>$</span><b>Registrar movimiento</b><small>Ingreso, gasto o compromiso</small></button>
       <button onClick={() => go("gestion")}><span>!</span><b>Gestionar reclamos</b><small>Proyectos y necesidades vecinales</small></button>
     </div></section>
@@ -720,41 +725,8 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
   const [campaignRecords,setCampaignRecords]=useState<Record<keyof typeof campaignModuleConfig,CampaignRecord[]>>({tareas:[],operativos:[],eventos:[],comunicacion:[],logistica:[],fiscalizacion:[]});
   const [menuOpen,setMenuOpen]=useState(false);
   const [bellOpen,setBellOpen]=useState(false);
-  const [headquartersMapLocation,setHeadquartersMapLocation]=useState<{latitude:number;longitude:number}|null>(null);
   const [notice, setNotice] = useState("");
   const [contextLoading,setContextLoading]=useState(true);
-  const territoryPoints = useMemo<MapPoint[]>(() => [
-    ...headquarters
-      .filter(item => item.latitude && item.longitude)
-      .map(item => ({
-        id:`s-${item.id}`,
-        latitude:Number(item.latitude),
-        longitude:Number(item.longitude),
-        title:item.name,
-        detail:item.address,
-        kind:"sede" as const,
-      })),
-    ...claims
-      .filter(item => item.latitude && item.longitude)
-      .map(item => ({
-        id:`c-${item.id}`,
-        latitude:Number(item.latitude),
-        longitude:Number(item.longitude),
-        title:item.title,
-        detail:`Reclamo · ${item.address}`,
-        kind:"reclamo" as const,
-      })),
-    ...referents
-      .filter(item => item.latitude && item.longitude)
-      .map(item => ({
-        id:`r-${item.id}`,
-        latitude:Number(item.latitude),
-        longitude:Number(item.longitude),
-        title:item.full_name,
-        detail:`Referente · ${item.neighborhood||item.zone||"Sin zona"}`,
-        kind:"referente" as const,
-      })),
-  ], [headquarters,claims,referents]);
   const organization = organizations.find((org) => org.id === organizationId) ?? organizations[0];
   const membership = members.find((member) => member.user_id === profile.id);
   const orgRole: Role = membership?.role ?? (profile.is_platform_admin ? "admin" : profile.role);
@@ -775,7 +747,7 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
     const [teamResult, memberResult, sedeResult, budgetResult, claimResult, projectResult, proposalResult, activityResult, referentResult,voterResult,importResult,auditResult,notificationReadResult,...campaignResults] = await Promise.all([
       supabase.from("teams").select("*").eq("organization_id", organizationId).order("name"),
       supabase.from("memberships").select("organization_id,user_id,team_id,role,active,allowed_modules,profiles(id,full_name,active)").eq("organization_id", organizationId),
-      supabase.from("headquarters").select("id,name,address,circuit,phone,team_id,responsible_user_id,active,latitude,longitude").eq("organization_id", organizationId).eq("active", true).order("name"),
+      supabase.from("headquarters").select("id,name,address,circuit,phone,team_id,responsible_user_id,active,latitude,longitude,location_type").eq("organization_id", organizationId).eq("active", true).order("name"),
       supabase.from("budget_entries").select("id,kind,category,description,amount,occurred_on,status,payment_method").eq("organization_id", organizationId).order("occurred_on", { ascending: false }).limit(100),
       supabase.from("claims").select("*").eq("organization_id",organizationId).order("created_at",{ascending:false}).limit(200),
       supabase.from("projects").select("*").eq("organization_id",organizationId).order("created_at",{ascending:false}).limit(200),
@@ -815,27 +787,11 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
   }, [loadContext]);
 
   async function reloadAll() { await loadOrganizations(); await loadContext(); }
-  const allModules = [
-    ...(isNagleWorkspace(organization)?[{id:"organizacion",label:"Equipo y jornadas",icon:"◈"}]:[]),
-    { id: "inicio", label: "Inicio", icon: "⌂" }, { id: "votantes", label: "Votantes", icon: "◎" },
-    { id: "sedes", label: "Sedes", icon: "◇" }, { id: "presupuesto", label: "Presupuesto", icon: "$" },
-    { id: "gestion", label: "Gestión", icon: "!" },
-    { id: "agenda", label: "Agenda", icon: "▣" },
-    { id: "propuestas", label: "Propuestas", icon: "◆" },
-    { id: "territorio", label: "Territorio", icon: "◎" },
-    { id: "tareas", label: "Tareas", icon: "✓" },
-    { id: "operativos", label: "Operativos", icon: "⌖" },
-    { id: "eventos", label: "Eventos", icon: "◉" },
-    { id: "comunicacion", label: "Comunicación", icon: "◫" },
-    { id: "logistica", label: "Logística", icon: "▤" },
-    { id: "fiscalizacion", label: "Fiscalización", icon: "⚑" },
-    ...(canAdmin ? [{ id: "admin", label: "Administración", icon: "⚙" }] : []),
-  ];
-  const modules=allModules.filter(item=>item.id==="organizacion"||item.id==="inicio"||item.id==="admin"||profile.is_platform_admin||orgRole==="admin"||(membership?.allowed_modules??(orgRole==="coordinacion"?configurableModules.map(([id])=>id):orgRole==="territorio"?["sedes","gestion","agenda","propuestas","territorio"]:orgRole==="finanzas"?["presupuesto","agenda"]:["agenda"])).includes(item.id));
-  useEffect(()=>{if(isNagleWorkspace(organization)&&new URLSearchParams(window.location.search).get("module")==="organizacion")setActive("organizacion");},[organization?.id]);
+  const allModules = [{ id: "inicio", label: "Inicio", icon: "⌂" },{ id: "votantes", label: "Votantes", icon: "◎" },{ id: "sedes", label: "Locaciones", icon: "◇" },{ id: "presupuesto", label: "Presupuesto", icon: "$" },{ id: "gestion", label: "Gestión", icon: "!" },{ id: "agenda", label: "Agenda", icon: "▣" },{ id: "eventos", label: "Eventos", icon: "◉" },{ id: "logistica", label: "Logística", icon: "▤" },{ id: "fiscalizacion", label: "Fiscalización", icon: "⚑" },...(canAdmin ? [{ id: "admin", label: "Configuración", icon: "⚙" }] : [])];
+  const modules=allModules.filter(item=>item.id==="inicio"||item.id==="admin"||profile.is_platform_admin||orgRole==="admin"||(membership?.allowed_modules??(orgRole==="coordinacion"?configurableModules.map(([id])=>id):orgRole==="territorio"?["sedes","gestion","agenda"]:orgRole==="finanzas"?["presupuesto","agenda"]:["agenda"])).includes(item.id));
   function go(id: string) {
     if (id === "presupuesto" && !canFinance) return setNotice("Tu rol no tiene acceso al presupuesto.");
-    if (id === "admin" && !canAdmin) return setNotice("Tu rol no tiene acceso a Administración.");
+    if (id === "admin" && !canAdmin) return setNotice("Tu rol no tiene acceso a Configuración.");
     if(!modules.some(module=>module.id===id))return setNotice("No tenés permiso para acceder a este módulo.");
     setActive(id);setMenuOpen(false);
   }
@@ -847,8 +803,6 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
     ...claims.filter(c=>c.priority==="urgente"&&!["resuelto","cerrado"].includes(c.status)).map(c=>({id:`c${c.id}`,title:"Reclamo urgente",text:c.title,module:"gestion"})),
     ...projects.filter(p=>p.due_date&&new Date(`${p.due_date}T23:59:59`).getTime()<currentTime&&!["completado","cancelado"].includes(p.status)).map(p=>({id:`p${p.id}`,title:"Proyecto vencido",text:p.name,module:"gestion"})),
     ...activities.filter(a=>{const diff=new Date(a.starts_at).getTime()-currentTime;return diff>=0&&diff<=86400000&&!["realizada","cancelada"].includes(a.status)}).map(a=>({id:`a${a.id}`,title:"Actividad próxima",text:a.title,module:"agenda"})),
-    ...campaignRecords.tareas.filter(item=>item.scheduled_for&&new Date(item.scheduled_for).getTime()<currentTime&&!["completada","cancelada"].includes(item.status)).map(item=>({id:`t${item.id}`,title:"Tarea vencida",text:item.title,module:"tareas"})),
-    ...campaignRecords.operativos.filter(item=>item.scheduled_for&&new Date(item.scheduled_for).getTime()-currentTime>=0&&new Date(item.scheduled_for).getTime()-currentTime<=86400000).map(item=>({id:`o${item.id}`,title:"Operativo próximo",text:item.title,module:"operativos"}))
   ].slice(0,20);
   const readIds=new Set(notificationReads.map(item=>item.notification_id));
   const unreadNotifications=notifications.filter(item=>!readIds.has(item.id));
@@ -869,15 +823,12 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
     </header>
     {bellOpen&&<aside className="notification-panel"><div><span><strong>Notificaciones</strong><small>{unreadNotifications.length} sin leer</small></span><button onClick={()=>setBellOpen(false)}>×</button></div>{unreadNotifications.length>0&&<button className="notification-read-all" onClick={()=>void markAllNotificationsRead()}>✓ Marcar todas como leídas</button>}{notifications.length===0?<Empty title="Todo al día" text="No hay avisos urgentes ni vencimientos cercanos."/>:notifications.map(item=><button className={readIds.has(item.id)?"is-read":""} key={item.id} onClick={()=>{void markNotificationRead(item.id);go(item.module);setBellOpen(false)}}><i/><span><b>{item.title}</b><small>{item.text}</small></span></button>)}</aside>}
     <div className="page module-stage" key={active}>
-      {active === "organizacion" && isNagleWorkspace(organization) && <StaffWorkspace key={organization.id} organizationId={organization.id} userId={profile.id} canManage={canAdmin||orgRole==="coordinacion"} teams={teams} members={members} reload={loadContext}/>}
       {active === "inicio" && <HomeDashboard organization={organization} organizations={organizations} canAdmin={canAdmin} selectOrganization={setOrganizationId} teams={teams} members={members} headquarters={headquarters} entries={entries} claims={claims} projects={projects} activities={activities} referents={referents} voters={voters} go={go} />}
       {active === "votantes" && <VotersView user={session.user} organization={organization} items={voterImports} voters={voters} reload={loadContext}/>}
-      {active === "sedes" && <HeadquartersView organization={organization} teams={teams} members={members} items={headquarters} reload={loadContext} />}
+      {active === "sedes" && <LocationsView organization={organization} teams={teams} members={members} items={headquarters} reload={loadContext} />}
       {active === "presupuesto" && <Budget user={session.user} organization={organization} entries={entries} reload={loadContext} />}
       {active === "gestion" && <ManagementView user={session.user} organization={organization} teams={teams} members={members} headquarters={headquarters} claims={claims} projects={projects} reload={loadContext} />}
-      {active === "propuestas" && <ProposalsView user={session.user} organization={organization} members={members} claims={claims} projects={projects} items={proposals} reload={loadContext}/>}
       {active === "agenda" && <AgendaView user={session.user} organization={organization} teams={teams} members={members} headquarters={headquarters} items={activities} reload={loadContext}/>}
-      {active === "territorio" && <><ModuleTitle kicker="TERRITORIO EN TIEMPO REAL" title="Mapa de campaña" subtitle="Filtrá sedes, reclamos y referentes; tocá el mapa para crear una sede en su ubicación exacta."/><article className="panel territory-map-panel territory-map-primary"><PanelHead kicker="LEAFLET · MAPA DE CALLES" title="Cobertura territorial" aside={`${territoryPoints.length} ubicaciones`}/><TerritoryMap points={territoryPoints} onCreateHeadquarters={setHeadquartersMapLocation}/></article><HeadquartersView embedded organization={organization} teams={teams} members={members} items={headquarters} reload={loadContext} initialLocation={headquartersMapLocation}/><TerritoryView user={session.user} organization={organization} teams={teams} members={members} headquarters={headquarters} items={referents} reload={loadContext}/></>}
       {(Object.keys(campaignModuleConfig) as (keyof typeof campaignModuleConfig)[]).map(moduleId=>active===moduleId&&<CampaignModuleView key={moduleId} moduleId={moduleId} user={session.user} organization={organization} members={members} items={campaignRecords[moduleId]} reload={loadContext}/>)}
       {active === "admin" && <AdminView profile={profile} organization={organization} organizations={organizations} teams={teams} members={members} referents={referents} auditItems={auditItems} reloadAll={reloadAll} selectOrganization={setOrganizationId} />}
     </div>
