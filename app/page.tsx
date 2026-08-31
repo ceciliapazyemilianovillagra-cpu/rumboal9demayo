@@ -727,7 +727,7 @@ function TerritoryView({user,organization,teams,members,headquarters,items,reloa
 }
 
 function ModuleTitle({ kicker, title, subtitle, children }: { kicker: string; title: string; subtitle: string; children?: React.ReactNode }) {
-  return <div className="module-title"><div><p className="kicker">{kicker}</p><h1>{title}</h1><span>{subtitle}</span></div>{children}</div>;
+  return <><div className="module-title"><div><p className="kicker">{kicker}</p><h1>{title}</h1><span>{subtitle}</span></div></div>{children&&<div className="module-title-actions">{children}</div>}</>;
 }
 function PanelHead({ kicker, title, aside }: { kicker: string; title: string; aside?: React.ReactNode }) {
   return <div className="panel-head"><div><p className="kicker">{kicker}</p><h2>{title}</h2></div>{aside && <span>{aside}</span>}</div>;
