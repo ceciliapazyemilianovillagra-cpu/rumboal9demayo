@@ -20,6 +20,9 @@ import {
   getDoc,
   getDocs,
   getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
   limit as firestoreLimit,
   orderBy as firestoreOrderBy,
   query,
@@ -40,7 +43,9 @@ const firebaseConfig = {
 
 export const firebaseApp = getApps().length ? getApp() : initializeApp(firebaseConfig);
 export const firebaseAuth = getAuth(firebaseApp);
-export const firestore = getFirestore(firebaseApp);
+export const firestore = typeof window === "undefined" ? getFirestore(firebaseApp) : initializeFirestore(firebaseApp, {
+  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+});
 
 if (typeof window !== "undefined") {
   void setPersistence(firebaseAuth, browserLocalPersistence).catch(() => undefined);
