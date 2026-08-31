@@ -815,10 +815,17 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
   const canAdmin = profile.is_platform_admin || orgRole === "admin";
 
   const loadOrganizations = useCallback(async () => {
-    const organizationsQuery = supabase.from("organizations").select("*");
-    if (!profile.is_platform_admin) organizationsQuery.eq("active", true);
-    const { data } = await organizationsQuery.order("name");
-    const list = (data ?? []) as Organization[]; setOrganizations(list);
+    let list:Organization[]=[];
+    if(profile.is_platform_admin){
+      const result=await supabase.from("organizations").select("*").order("name");
+      list=(result.data??[]) as Organization[];
+    }else{
+      const membershipResult=await supabase.from("memberships").select("organization_id,active").eq("user_id",profile.id);
+      const organizationIds=[...new Set(((membershipResult.data??[]) as {organization_id:string;active?:boolean}[]).filter(item=>item.active!==false).map(item=>item.organization_id))];
+      const results=await Promise.all(organizationIds.map(id=>supabase.from("organizations").select("*").eq("id",id).maybeSingle()));
+      list=results.map(result=>result.data as Organization|null).filter((item):item is Organization=>Boolean(item&&item.active));
+    }
+    list.sort((left,right)=>left.name.localeCompare(right.name,"es")); setOrganizations(list);
     const requested=new URLSearchParams(window.location.search).get("workspace");
     setOrganizationId((current) => current && list.some((org) => org.id === current) ? current : list.find(org=>org.id===requested)?.id ?? list[0]?.id ?? "");
     if(list.length===0)setContextLoading(false);
