@@ -5,6 +5,7 @@ import { firebase as supabase, type Session, type User } from "../lib/firebase";
 import { TerritoryMap } from "./territory-map";
 import { isNagleWorkspace } from "./staff-workspace";
 import QRCode from "qrcode";
+import readXlsxFile from "read-excel-file";
 
 type Role = "admin" | "coordinacion" | "territorio" | "finanzas" | "consulta";
 type Profile = { id: string; full_name: string; role: Role; active: boolean; is_platform_admin: boolean };
@@ -421,6 +422,7 @@ function AdminView({ profile, organization, organizations, teams, members, refer
   const [orgOpen, setOrgOpen] = useState(false);
   const [authorizationOpen, setAuthorizationOpen] = useState(false);
   const [authorizing, setAuthorizing] = useState(false);
+  const [importingUsers, setImportingUsers] = useState(false);
   const [message, setMessage] = useState("");
   const [generatedLink,setGeneratedLink]=useState("");
   const [authorizations,setAuthorizations]=useState<AuthorizedAccess[]>([]);
@@ -520,6 +522,37 @@ function AdminView({ profile, organization, organizations, teams, members, refer
     }).eq("id",organization.id);
     setMessage(error?"No se pudo guardar la personalización.":"Personalización guardada.");if(!error)await reloadAll();
   }
+  async function importAuthorizedUsers(event: React.ChangeEvent<HTMLInputElement>) {
+    const file=event.target.files?.[0];
+    if(!file)return;
+    setImportingUsers(true);setMessage("");
+    try {
+      const rows=await readXlsxFile(file);
+      const headerIndex=rows.findIndex(row=>row.some(value=>String(value||"").trim().toLowerCase()==="correo"));
+      if(headerIndex<0)throw new Error("No encontramos la columna correo.");
+      const headers=rows[headerIndex].map(value=>String(value||"").trim().toLowerCase());
+      const field=(row:unknown[],name:string)=>String(row[headers.indexOf(name)]??"").trim();
+      const acceptedRoles:Role[]=["admin","coordinacion","territorio","finanzas","consulta"];
+      let added=0, skipped=0;
+      for(const row of rows.slice(headerIndex+1)){
+        const email=field(row,"correo").toLowerCase();
+        if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){if(row.some(value=>value!==null&&value!==""))skipped++;continue;}
+        const active=field(row,"activo").toLowerCase();
+        if(["no","false","0","inactivo"].includes(active)){skipped++;continue;}
+        const requestedRole=field(row,"rol").toLowerCase() as Role;
+        const role=acceptedRoles.includes(requestedRole)?requestedRole:"territorio";
+        const teamName=field(row,"equipo").toLocaleLowerCase("es-AR");
+        const team=teams.find(item=>item.name.toLocaleLowerCase("es-AR")===teamName);
+        const defaults=role==="coordinacion"?configurableModules.map(([id])=>id):role==="territorio"?["sedes","gestion","agenda","eventos"]:role==="finanzas"?["presupuesto","agenda","logistica"]:["agenda"];
+        const modules=field(row,"modulos").split(/[,;|]/).map(value=>value.trim().toLowerCase()).filter(value=>configurableModules.some(([id])=>id===value));
+        const result=await supabase.from("authorized_access").insert({id:email,organization_id:organization.id,full_name:field(row,"nombre_completo")||email,email,team_id:team?.id??null,role,allowed_modules:modules.length?modules:defaults,active:true,created_by:profile.id,created_at:new Date().toISOString()});
+        if(result.error)skipped++;else added++;
+      }
+      await loadAuthorizations();
+      setMessage(`Importación terminada: ${added} correos autorizados${skipped?` · ${skipped} filas omitidas o ya existentes`:""}.`);
+    }catch{setMessage("No se pudo leer la planilla. Descargá el modelo y no cambies sus encabezados.");}
+    finally{event.target.value="";setImportingUsers(false);}
+  }
   async function resetMemberPassword(member:Member){const result=await supabase.from("profiles").select("email").eq("id",member.user_id).maybeSingle();const email=String((result.data as {email?:string}|null)?.email||"");if(!email)return setMessage("Este usuario no tiene correo registrado.");const reset=await supabase.auth.resetPasswordForEmail(email,{redirectTo:window.location.origin});setMessage(reset.error?"No se pudo enviar el blanqueo.":`Enlace de blanqueo enviado a ${email}.`);}
   async function loadDemo(){if(!window.confirm("Cargar ejemplos ficticios para la presentación?"))return;const o=organization.id,n=new Date().toISOString();await supabase.from("teams").insert([{organization_id:o,name:"Coordinación Centro",active:true},{organization_id:o,name:"Territorio Norte",active:true}]);await supabase.from("headquarters").insert([{organization_id:o,name:"Sede Centro",address:"San Martín 450",location_type:"sede",active:true,latitude:-26.8305,longitude:-65.2048},{organization_id:o,name:"Club Barrio Norte",address:"Av. Ejército del Norte 1200",location_type:"club",active:true,latitude:-26.813,longitude:-65.217}]);await supabase.from("budget_entries").insert([{organization_id:o,kind:"ingreso",category:"Aportes",description:"Aporte de campaña",amount:250000,occurred_on:"2026-08-01",status:"confirmado"},{organization_id:o,kind:"gasto",category:"Comunicación",description:"Folletos",amount:48000,occurred_on:"2026-08-03",status:"confirmado"}]);await supabase.from("claims").insert({organization_id:o,title:"Iluminación de plaza",description:"Solicitud demostrativa",category:"Alumbrado",priority:"alta",status:"en_proceso",address:"Plaza Barrio Norte",neighborhood:"Barrio Norte",created_at:n});await supabase.from("activities").insert({organization_id:o,title:"Reunión con referentes",activity_type:"reunion",starts_at:"2026-09-05T18:00",status:"programada",location:"Sede Centro",created_at:n});await supabase.from("campaign_events").insert({organization_id:o,title:"Encuentro vecinal",record_type:"Encuentro vecinal",status:"confirmado",priority:"media",scheduled_for:"2026-09-10T19:00",location:"Club Barrio Norte",created_at:n});await supabase.from("logistics_items").insert({organization_id:o,title:"Móvil 01",record_type:"Vehículo",status:"confirmado",priority:"media",contact_name:"Conductor demo",created_at:n});await supabase.from("election_day_assignments").insert({organization_id:o,title:"Escuela demostración",record_type:"Fiscal general",status:"pendiente",priority:"alta",contact_name:"Fiscal demo",created_at:n});await reloadAll();setMessage("Demo ficticia cargada.");}
   async function resetSpace(){if(!window.confirm("Borrar todos los datos operativos de este espacio?"))return;for(const t of ["teams","headquarters","budget_entries","claims","projects","activities","campaign_events","event_attendance","logistics_items","election_day_assignments","public_links"]){const r=await supabase.from(t).select("id").eq("organization_id",organization.id);for(const x of r.data??[])await supabase.from(t).delete().eq("id",x.id);}await reloadAll();setMessage("Datos operativos eliminados.");}
@@ -553,7 +586,7 @@ function AdminView({ profile, organization, organizations, teams, members, refer
     </div>}
     {adminTab==="usuarios"&&<div className="admin-single">
       <article className="panel admin-section">
-        <PanelHead kicker="PERSONAS Y PERMISOS" title="Usuarios" aside={<div className="user-tools"><button className="text-button" onClick={() => setAuthorizationOpen(!authorizationOpen)}>＋ Autorizar correo</button></div>} />
+        <PanelHead kicker="PERSONAS Y PERMISOS" title="Usuarios" aside={<div className="user-tools"><a className="text-button" href="/plantilla-carga-usuarios.xlsx" download>↓ Modelo Excel</a><label className="text-button">{importingUsers?"Importando...":"↑ Carga masiva"}<input hidden type="file" accept=".xlsx" disabled={importingUsers} onChange={event=>void importAuthorizedUsers(event)}/></label><button className="text-button" onClick={() => setAuthorizationOpen(!authorizationOpen)}>＋ Autorizar correo</button></div>} />
         <p className="form-message">Un solo enlace para todos: cada persona ingresa su correo, crea su clave una vez y sólo accede si este correo fue autorizado aquí.</p>
         {authorizationOpen && <form className="invite-form" onSubmit={authorizeMember}>
           <div><label>Nombre completo<input name="full_name" required placeholder="Ana Páez" /></label><label>Correo electrónico<input name="email" required type="email" placeholder="ana@correo.com" /></label></div>
