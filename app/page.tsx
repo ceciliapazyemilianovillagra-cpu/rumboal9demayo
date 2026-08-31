@@ -37,7 +37,7 @@ type Proposal = { id:number; title:string; theme:string; diagnosis:string; solut
 type Activity = { id:number; title:string; activity_type:string; description:string|null; starts_at:string; ends_at:string|null; location:string|null; headquarters_id:number|null; team_id:string|null; responsible_user_id:string|null; status:string };
 type Referent = { id:number; full_name:string; phone:string|null; email:string|null; referent_type:string; neighborhood:string|null; circuit:string|null; zone:string|null; headquarters_id:number|null; team_id:string|null; reports_to_user_id:string|null; influence_level:string; status:string; notes:string|null; latitude:number|null; longitude:number|null };
 type VoterImport = { id:string; file_name:string; file_size:number|null; source_format:string; status:string; detected_columns:string[]; total_rows:number; processed_rows:number; error_rows:number; created_at:string };
-type Voter = { id:number; dni:string; full_name:string; address:string|null; circuit:string|null; polling_place:string|null; contact_status:string; assigned_to:string|null; source_data:Record<string,unknown> };
+type Voter = { id:string; dni:string; full_name:string; address:string|null; circuit:string|null; polling_place:string|null; contact_status:string; assigned_to:string|null; source_data:Record<string,unknown> };
 type AuditItem = { id:number; entity_type:string; entity_id:string; action:string; details:Record<string,unknown>; created_at:string; actor_id:string|null };
 type NotificationRead = { id:string; organization_id:string; user_id:string; notification_id:string; read_at:string };
 type CampaignRecord = { id:string; organization_id:string; title:string; status:string; priority:string; responsible_user_id:string|null; scheduled_for:string|null; location:string|null; notes:string|null; created_at:string; record_type?:string; contact_name?:string|null; contact_phone?:string|null; linked_location_id?:string|null };
@@ -51,6 +51,30 @@ const roleLabels: Record<Role, string> = {
   finanzas: "Finanzas", consulta: "Consulta",
 };
 const money = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 });
+
+function normalizedColumn(value: unknown) {
+  return String(value ?? "").trim().toLocaleLowerCase("es").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
+}
+
+function parseCsvRows(source: string) {
+  const rows: string[][] = []; let row: string[] = []; let cell = ""; let quoted = false;
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index]; const next = source[index + 1];
+    if (char === '"' && quoted && next === '"') { cell += '"'; index += 1; }
+    else if (char === '"') quoted = !quoted;
+    else if (!quoted && (char === "," || char === ";")) { row.push(cell.trim()); cell = ""; }
+    else if (!quoted && (char === "\n" || char === "\r")) {
+      if (char === "\r" && next === "\n") index += 1;
+      row.push(cell.trim()); if (row.some(value => value !== "")) rows.push(row); row = []; cell = "";
+    } else cell += char;
+  }
+  row.push(cell.trim()); if (row.some(value => value !== "")) rows.push(row);
+  return rows;
+}
+
+function voterColumnIndex(headers: string[], aliases: string[]) {
+  return headers.findIndex(header => aliases.includes(normalizedColumn(header)));
+}
 
 function Logo({ compact = false }: { compact?: boolean }) {
   return <div className={`logo-lockup ${compact ? "compact" : ""}`}>
@@ -301,6 +325,7 @@ function LocationsView({ organization, teams, members, items, reload, initialLoc
 function VotersView({user,organization,items,voters,reload}:{user:User;organization:Organization;items:VoterImport[];voters:Voter[];reload:()=>Promise<void>}) {
   const [message,setMessage]=useState("");
   const [busy,setBusy]=useState(false);
+  const [progress,setProgress]=useState("");
   const [search,setSearch]=useState("");
   const [statusFilter,setStatusFilter]=useState("todos");
   const filteredVoters=useMemo(()=>{
@@ -313,26 +338,45 @@ function VotersView({user,organization,items,voters,reload}:{user:User;organizat
   },[voters,search,statusFilter]);
 
   async function prepareImport(event:FormEvent<HTMLFormElement>){
-    event.preventDefault();setBusy(true);setMessage("");
+    event.preventDefault(); setBusy(true); setMessage(""); setProgress("");
     const form=event.currentTarget,file=new FormData(form).get("padron") as File;
     const extension=file.name.split(".").pop()?.toLowerCase();
-    let columns:string[]=[];
-    if(extension==="csv"){
-      const firstLine=(await file.slice(0,65536).text()).replace(/^\uFEFF/,"").split(/\r?\n/)[0]||"";
-      const separator=firstLine.includes(";")?";":",";
-      columns=firstLine.split(separator).map(x=>x.trim().replace(/^['"]|['"]$/g,"")).filter(Boolean);
-    }
-    const {error}=await supabase.from("voter_imports").insert({
-      organization_id:organization.id,file_name:file.name,file_size:file.size,
-      source_format:extension==="csv"?"csv":extension==="xlsx"?"xlsx":"other",
-      detected_columns:columns,status:columns.length?"mapeo":"analisis",created_by:user.id,
-      notes:"Archivo registrado para análisis seguro. El contenido no se envió desde el navegador."
-    });
-    if(error)setMessage("No se pudo preparar la importación.");
-    else{form.reset();setMessage(columns.length?`Archivo analizado: ${columns.length} columnas detectadas.`:"Archivo registrado para análisis.");await reload();}
-    setBusy(false);
+    try {
+      if (!file || !["csv","xlsx"].includes(extension ?? "")) throw new Error("Elegí un archivo CSV o XLSX.");
+      setProgress("Leyendo el archivo…");
+      const rows:unknown[][]=extension==="csv"?parseCsvRows((await file.text()).replace(/^\uFEFF/,"")):await readXlsxFile(file) as unknown[][];
+      if(rows.length<2) throw new Error("El archivo no tiene filas de votantes.");
+      const headers=rows[0].map(value=>String(value??"").trim());
+      const dniIndex=voterColumnIndex(headers,["dni","documento","nrodocumento","numerodocumento","nrodoc"]);
+      const nameIndex=voterColumnIndex(headers,["nombreyapellido","nombreapellido","apellidoynombre","nombrecompleto","nombre"]);
+      const addressIndex=voterColumnIndex(headers,["domicilio","direccion","direcciondomicilio","direccioncompleta"]);
+      const circuitIndex=voterColumnIndex(headers,["circuito","circuit"]);
+      const schoolIndex=voterColumnIndex(headers,["escuela","establecimiento","lugardevotacion","escueladevotacion","institucion"]);
+      if(dniIndex<0||nameIndex<0) throw new Error("Faltan las columnas obligatorias DNI y Nombre y apellido.");
+      const sourceRows=rows.slice(1).filter(row=>row.some(value=>String(value??"").trim()!==""));
+      if(!sourceRows.length) throw new Error("No se encontraron votantes para importar.");
+      if(sourceRows.length>2000) throw new Error("Este importador web admite hasta 2.000 filas por carga. Para el padrón completo usaremos una importación administrativa por lotes.");
+      const {data:importRecord,error:importError}=await supabase.from("voter_imports").insert({organization_id:organization.id,file_name:file.name,file_size:file.size,source_format:extension,detected_columns:headers,status:"importando",total_rows:sourceRows.length,processed_rows:0,error_rows:0,created_by:user.id,notes:"Importación iniciada desde Votantes."}).single();
+      if(importError||!importRecord) throw new Error("No se pudo iniciar la importación en Firebase.");
+      let processed=0,failed=0;
+      for(let start=0;start<sourceRows.length;start+=25){
+        const records:Record<string,unknown>[]=[];
+        sourceRows.slice(start,start+25).forEach(row=>{
+          const dni=String(row[dniIndex]??"").replace(/\D/g,""); const fullName=String(row[nameIndex]??"").trim();
+          if(!dni||!fullName){failed+=1;return;}
+          const sourceData=Object.fromEntries(headers.slice(0,40).map((header,index)=>[header,String(row[index]??"").trim()]));
+          records.push({id:`${organization.id}_dni_${dni}`,organization_id:organization.id,dni,full_name:fullName,address:addressIndex>=0?String(row[addressIndex]??"").trim()||null:null,circuit:circuitIndex>=0?String(row[circuitIndex]??"").trim()||null:null,polling_place:schoolIndex>=0?String(row[schoolIndex]??"").trim()||null:null,contact_status:"sin_contactar",assigned_to:null,source_data:sourceData,created_by:user.id});
+        });
+        if(records.length){const {error}=await supabase.from("voters").insert(records);if(error) throw error;}
+        processed+=Math.min(25,sourceRows.length-start); setProgress(`Guardando ${processed} de ${sourceRows.length} votantes…`);
+        await supabase.from("voter_imports").update({processed_rows:processed,error_rows:failed,status:"importando"}).eq("id",importRecord.id);
+      }
+      await supabase.from("voter_imports").update({processed_rows:processed,error_rows:failed,status:failed?"completada_con_observaciones":"completada",notes:failed?`${failed} fila(s) sin DNI o nombre fueron omitidas.`:"Padrón incorporado correctamente."}).eq("id",importRecord.id);
+      form.reset(); await reload(); setMessage(`Listo: se incorporaron ${processed-failed} votantes${failed?`; ${failed} fila(s) incompleta(s) fueron omitidas.`:"."}`);
+    } catch(cause) { setMessage(`No se importó ningún votante: ${cause instanceof Error?cause.message:"Error inesperado."}`); }
+    finally {setBusy(false);setProgress("");}
   }
-  async function changeContactStatus(id:number,contact_status:string){
+  async function changeContactStatus(id:string,contact_status:string){
     const {error}=await supabase.from("voters").update({contact_status}).eq("id",id).eq("organization_id",organization.id);
     if(error)setMessage("No se pudo actualizar el contacto.");else await reload();
   }
@@ -345,8 +389,9 @@ function VotersView({user,organization,items,voters,reload}:{user:User;organizat
       <article><b>{new Set(voters.map(v=>v.circuit).filter(Boolean)).size}</b><span>circuitos</span></article>
     </div>
     <article className="panel voter-plan">
-      <div className="voter-hero"><div><p className="kicker">IMPORTACIÓN PREPARADA</p><h2>Preparar el padrón</h2><p>Descargá el modelo, completalo cuando recibas la información oficial y analizá sus columnas antes de incorporar datos.</p><a className="pdf-button" href="/plantilla-padron.xlsx" download>↓ Descargar modelo Excel</a></div></div>
-      <form className="voter-import-form" onSubmit={prepareImport}><div><strong>Analizar un padrón</strong><span>Verifica encabezados y formato sin incorporar datos sensibles todavía.</span></div><input name="padron" type="file" accept=".csv,.xlsx" required/><button className="primary compact" disabled={busy}>{busy?"Analizando...":"Analizar archivo"}</button></form>
+      <div className="voter-hero"><div><p className="kicker">IMPORTACIÓN DE PADRÓN</p><h2>Cargar votantes</h2><p>Elegí un archivo con DNI y nombre y apellido. La carga guarda personas, domicilios, circuitos y establecimientos directamente en tu espacio político.</p><a className="pdf-button" href="/modelo-padron.csv" download>↓ Descargar modelo para Excel</a></div></div>
+      <form className="voter-import-form" onSubmit={prepareImport}><div><strong>Importar padrón</strong><span>CSV recomendado (se abre con Excel) o XLSX válido. DNI y nombre y apellido son obligatorios.</span></div><input name="padron" type="file" accept=".csv,.xlsx" required/><button className="primary compact" disabled={busy}>{busy?"Importando...":"Importar votantes"}</button></form>
+      {progress&&<div className="info-banner">{progress}</div>}
       {message&&<div className="info-banner">{message}</div>}
     </article>
     <article className="panel voter-directory">
