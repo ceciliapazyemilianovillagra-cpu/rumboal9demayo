@@ -132,7 +132,7 @@ service cloud.firestore {
     }
     match /audit_log/{id} {
       allow read: if manager(resource.data.organization_id);
-      allow create: if member(request.resource.data.organization_id) &&
+      allow create: if (member(request.resource.data.organization_id) || platformAdmin()) &&
         request.resource.data.actor_id == request.auth.uid &&
         request.resource.data.entity_type is string &&
         request.resource.data.entity_id is string &&
@@ -176,10 +176,41 @@ service cloud.firestore {
       allow create: if moduleAccess(request.resource.data.organization_id, "fiscalizacion");
       allow update, delete: if moduleAccess(resource.data.organization_id, "fiscalizacion");
     }
+    function nagleWorkspace(orgId) {
+      return get(/databases/$(database)/documents/organizations/$(orgId)).data.candidate_name.lower() == "ernesto nagle";
+    }
+    match /staff_days/{id} {
+      allow read: if (member(resource.data.organization_id) || platformAdmin()) && nagleWorkspace(resource.data.organization_id);
+      allow create: if manager(request.resource.data.organization_id) && nagleWorkspace(request.resource.data.organization_id) &&
+        request.resource.data.starts_ms is number && request.resource.data.ends_ms is number &&
+        request.resource.data.ends_ms > request.resource.data.starts_ms &&
+        request.resource.data.ends_ms - request.resource.data.starts_ms <= 86400000;
+      allow update: if manager(resource.data.organization_id) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(["active", "updated_at"]);
+      allow delete: if false;
+    }
+    match /staff_checkins/{id} {
+      allow read: if manager(resource.data.organization_id) ||
+        (member(resource.data.organization_id) && resource.data.user_id == request.auth.uid);
+      allow create: if signedIn() && (member(request.resource.data.organization_id) || platformAdmin()) &&
+        nagleWorkspace(request.resource.data.organization_id) && request.resource.data.user_id == request.auth.uid &&
+        get(/databases/$(database)/documents/staff_days/$(request.resource.data.day_id)).data.organization_id == request.resource.data.organization_id &&
+        get(/databases/$(database)/documents/staff_days/$(request.resource.data.day_id)).data.active == true &&
+        get(/databases/$(database)/documents/staff_days/$(request.resource.data.day_id)).data.starts_ms <= request.time.toMillis() &&
+        get(/databases/$(database)/documents/staff_days/$(request.resource.data.day_id)).data.ends_ms > request.time.toMillis() &&
+        request.resource.data.status in ["Disponible", "Llegué al lugar de trabajo", "Tarea terminada", "Necesito asistencia"] &&
+        ((request.resource.data.location_consent == false && request.resource.data.latitude == null && request.resource.data.longitude == null) ||
+         (request.resource.data.location_consent == true && request.resource.data.latitude is number && request.resource.data.longitude is number &&
+          request.resource.data.latitude >= -90 && request.resource.data.latitude <= 90 && request.resource.data.longitude >= -180 && request.resource.data.longitude <= 180));
+      allow update, delete: if false;
+    }
+    function legacyCollection(name) {
+      return !(name in ["audit_log", "notification_reads", "staff_days", "staff_checkins"]);
+    }
     match /{collectionName}/{id} {
-      allow read: if resource.data.organization_id != null && member(resource.data.organization_id);
-      allow create: if request.resource.data.organization_id != null && manager(request.resource.data.organization_id);
-      allow update, delete: if resource.data.organization_id != null && manager(resource.data.organization_id);
+      allow read: if legacyCollection(collectionName) && resource.data.organization_id != null && member(resource.data.organization_id);
+      allow create: if legacyCollection(collectionName) && request.resource.data.organization_id != null && manager(request.resource.data.organization_id);
+      allow update, delete: if legacyCollection(collectionName) && resource.data.organization_id != null && manager(resource.data.organization_id);
     }
   }
 }
