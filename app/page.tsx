@@ -848,21 +848,15 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
   }, [profile.is_platform_admin]);
   const loadContext = useCallback(async () => {
     if (!organizationId) return;
-    const [teamResult, memberResult, sedeResult, budgetResult, claimResult, projectResult, proposalResult, activityResult, referentResult,voterResult,importResult,auditResult,notificationReadResult,...campaignResults] = await Promise.all([
+    const [teamResult, memberResult, sedeResult, budgetResult, claimResult, projectResult, activityResult, referentResult] = await Promise.all([
       supabase.from("teams").select("*").eq("organization_id", organizationId).order("name"),
       supabase.from("memberships").select("organization_id,user_id,team_id,role,active,allowed_modules,profiles(id,full_name,active)").eq("organization_id", organizationId),
       supabase.from("headquarters").select("id,name,address,circuit,phone,team_id,responsible_user_id,active,latitude,longitude,location_type").eq("organization_id", organizationId).eq("active", true).order("name"),
       supabase.from("budget_entries").select("id,kind,category,description,amount,occurred_on,status,payment_method").eq("organization_id", organizationId).order("occurred_on", { ascending: false }).limit(100),
       supabase.from("claims").select("*").eq("organization_id",organizationId).order("created_at",{ascending:false}).limit(200),
       supabase.from("projects").select("*").eq("organization_id",organizationId).order("created_at",{ascending:false}).limit(200),
-      supabase.from("proposals").select("*").eq("organization_id",organizationId).order("created_at",{ascending:false}).limit(200),
-      supabase.from("activities").select("*").eq("organization_id",organizationId).order("starts_at",{ascending:true}).limit(300),
-      supabase.from("territorial_referents").select("*").eq("organization_id",organizationId).order("full_name").limit(500),
-      supabase.from("voters").select("id,dni,full_name,address,circuit,polling_place,contact_status,assigned_to,source_data").eq("organization_id",organizationId).order("full_name").limit(500),
-      supabase.from("voter_imports").select("*").eq("organization_id",organizationId).order("created_at",{ascending:false}).limit(25),
-      supabase.from("audit_log").select("id,entity_type,entity_id,action,details,created_at,actor_id").eq("organization_id",organizationId).order("created_at",{ascending:false}).limit(50),
-      supabase.from("notification_reads").select("*").eq("user_id",profile.id).limit(500),
-      ...Object.values(campaignModuleConfig).map(config=>supabase.from(config.collection).select("*").eq("organization_id",organizationId).order("created_at",{ascending:false}).limit(300)),
+      supabase.from("activities").select("*").eq("organization_id",organizationId).order("starts_at",{ascending:true}).limit(100),
+      supabase.from("territorial_referents").select("*").eq("organization_id",organizationId).order("full_name").limit(100),
     ]);
     setTeams(((teamResult.data ?? []) as Team[]).filter(team=>team.active!==false));
     setMembers((memberResult.data ?? []) as unknown as Member[]);
@@ -870,16 +864,21 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
     setEntries(budgetResult.error ? [] : (budgetResult.data ?? []) as BudgetEntry[]);
     setClaims(claimResult.error?[]:(claimResult.data??[]) as Claim[]);
     setProjects(projectResult.error?[]:(projectResult.data??[]) as Project[]);
-    setProposals(proposalResult.error?[]:(proposalResult.data??[]) as Proposal[]);
     setActivities(activityResult.error?[]:(activityResult.data??[]) as Activity[]);
     setReferents(referentResult.error?[]:(referentResult.data??[]) as Referent[]);
-    setVoters(voterResult.error?[]:(voterResult.data??[]) as Voter[]);
-    setVoterImports(importResult.error?[]:(importResult.data??[]) as VoterImport[]);
-    setAuditItems(auditResult.error?[]:(auditResult.data??[]) as AuditItem[]);
-    setNotificationReads(notificationReadResult.error?[]:((notificationReadResult.data??[]) as NotificationRead[]).filter(item=>item.organization_id===organizationId));
-    const campaignKeys=Object.keys(campaignModuleConfig) as (keyof typeof campaignModuleConfig)[];
-    setCampaignRecords(Object.fromEntries(campaignKeys.map((key,index)=>[key,campaignResults[index]?.error?[]:(campaignResults[index]?.data??[]) as CampaignRecord[]])) as Record<keyof typeof campaignModuleConfig,CampaignRecord[]>);
     setContextLoading(false);
+    void (async()=>{
+      const [proposalResult,voterResult,importResult,auditResult,notificationReadResult,...campaignResults]=await Promise.all([
+        supabase.from("proposals").select("*").eq("organization_id",organizationId).order("created_at",{ascending:false}).limit(100),
+        supabase.from("voters").select("id,dni,full_name,address,circuit,polling_place,contact_status,assigned_to,source_data").eq("organization_id",organizationId).order("full_name").limit(150),
+        supabase.from("voter_imports").select("*").eq("organization_id",organizationId).order("created_at",{ascending:false}).limit(25),
+        supabase.from("audit_log").select("id,entity_type,entity_id,action,details,created_at,actor_id").eq("organization_id",organizationId).order("created_at",{ascending:false}).limit(50),
+        supabase.from("notification_reads").select("*").eq("user_id",profile.id).limit(100),
+        ...Object.values(campaignModuleConfig).map(config=>supabase.from(config.collection).select("*").eq("organization_id",organizationId).order("created_at",{ascending:false}).limit(100)),
+      ]);
+      setProposals(proposalResult.error?[]:(proposalResult.data??[]) as Proposal[]);setVoters(voterResult.error?[]:(voterResult.data??[]) as Voter[]);setVoterImports(importResult.error?[]:(importResult.data??[]) as VoterImport[]);setAuditItems(auditResult.error?[]:(auditResult.data??[]) as AuditItem[]);setNotificationReads(notificationReadResult.error?[]:((notificationReadResult.data??[]) as NotificationRead[]).filter(item=>item.organization_id===organizationId));
+      const campaignKeys=Object.keys(campaignModuleConfig) as (keyof typeof campaignModuleConfig)[];setCampaignRecords(Object.fromEntries(campaignKeys.map((key,index)=>[key,campaignResults[index]?.error?[]:(campaignResults[index]?.data??[]) as CampaignRecord[]])) as Record<keyof typeof campaignModuleConfig,CampaignRecord[]>);
+    })();
   }, [organizationId,profile.id]);
   useEffect(() => {
     const timer = window.setTimeout(() => void loadOrganizations(), 0);
