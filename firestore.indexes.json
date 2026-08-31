@@ -1,5 +1,6 @@
 {
   "indexes": [
+    { "collectionGroup": "teams", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "organization_id", "order": "ASCENDING" }, { "fieldPath": "name", "order": "ASCENDING" }] },
     { "collectionGroup": "staff_checkins", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "organization_id", "order": "ASCENDING" }, { "fieldPath": "created_at", "order": "DESCENDING" }] },
     { "collectionGroup": "organizations", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "active", "order": "ASCENDING" }, { "fieldPath": "name", "order": "ASCENDING" }] },
     { "collectionGroup": "teams", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "organization_id", "order": "ASCENDING" }, { "fieldPath": "active", "order": "ASCENDING" }, { "fieldPath": "name", "order": "ASCENDING" }] },
