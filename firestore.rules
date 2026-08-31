@@ -239,8 +239,8 @@ service cloud.firestore {
     match /mobility_events/{id} {
       allow read: if manager(resource.data.organization_id) ||
         (signedIn() && (resource.data.driver_user_id == request.auth.uid || resource.data.actor_id == request.auth.uid));
-      allow create: if signedIn() && request.resource.data.actor_id == request.auth.uid &&
-        assignedTransfer(get(/databases/$(database)/documents/mobility_transfers/$(request.resource.data.transfer_id)).data);
+      allow create: if manager(request.resource.data.organization_id) || (signedIn() && request.resource.data.actor_id == request.auth.uid &&
+        assignedTransfer(get(/databases/$(database)/documents/mobility_transfers/$(request.resource.data.transfer_id)).data));
       allow update, delete: if false;
     }
     function nagleWorkspace(orgId) {
