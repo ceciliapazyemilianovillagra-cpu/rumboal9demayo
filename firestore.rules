@@ -224,6 +224,25 @@ service cloud.firestore {
       allow create: if moduleAccess(request.resource.data.organization_id, "fiscalizacion") || (validPublicLink(request.resource.data.public_token, "fiscalizacion") && request.resource.data.organization_id == publicLink(request.resource.data.public_token).data.organization_id && request.resource.data.created_via == "public");
       allow update, delete: if moduleAccess(resource.data.organization_id, "fiscalizacion");
     }
+    function assignedTransfer(data) {
+      return signedIn() && (data.driver_user_id == request.auth.uid || data.mobilizer_user_id == request.auth.uid);
+    }
+    match /mobility_transfers/{id} {
+      allow read: if manager(resource.data.organization_id) || assignedTransfer(resource.data);
+      allow create, delete: if manager(request.resource.data.organization_id);
+      allow update: if manager(resource.data.organization_id) || (assignedTransfer(resource.data) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status", "status_updated_at", "last_latitude", "last_longitude", "last_updated_by", "dni_confirmed_at", "updated_at"]) &&
+        ((resource.data.status == "pendiente" && request.resource.data.status == "buscada") ||
+         (resource.data.status == "buscada" && request.resource.data.status == "en_destino") ||
+         (resource.data.status == "en_destino" && request.resource.data.status == "regresada")));
+    }
+    match /mobility_events/{id} {
+      allow read: if manager(resource.data.organization_id) ||
+        (signedIn() && (resource.data.driver_user_id == request.auth.uid || resource.data.actor_id == request.auth.uid));
+      allow create: if signedIn() && request.resource.data.actor_id == request.auth.uid &&
+        assignedTransfer(get(/databases/$(database)/documents/mobility_transfers/$(request.resource.data.transfer_id)).data);
+      allow update, delete: if false;
+    }
     function nagleWorkspace(orgId) {
       return get(/databases/$(database)/documents/organizations/$(orgId)).data.candidate_name.lower() == "ernesto nagle";
     }

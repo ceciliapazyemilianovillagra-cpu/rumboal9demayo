@@ -317,4 +317,35 @@ export const firebase = {
       }
     },
   },
+  mobility: {
+    async updateTransfer(input: { id: string; dni?: string; latitude: number; longitude: number }) {
+      try {
+        const user = firebaseAuth.currentUser;
+        if (!user) throw new Error("Tu sesión venció. Volvé a ingresar.");
+        const transferRef = doc(firestore, "mobility_transfers", input.id);
+        const snapshot = await getDoc(transferRef);
+        if (!snapshot.exists()) throw new Error("El traslado ya no está disponible.");
+        const transfer = snapshot.data();
+        if (transfer.driver_user_id !== user.uid && transfer.mobilizer_user_id !== user.uid) throw new Error("No tenés permiso para actualizar este traslado.");
+        const current = String(transfer.status || "pendiente");
+        const next: Record<string, string> = { pendiente: "buscada", buscada: "en_destino", en_destino: "regresada" };
+        const status = next[current];
+        if (!status) throw new Error("Este traslado ya fue finalizado.");
+        const expectedDni = String(transfer.voter_dni || "").replace(/\D/g, "");
+        if (current === "pendiente" && (!input.dni || input.dni.replace(/\D/g, "") !== expectedDni)) throw new Error("El DNI no coincide con la persona asignada.");
+        const now = new Date().toISOString();
+        const batch = writeBatch(firestore);
+        batch.update(transferRef, {
+          status, status_updated_at: now, last_latitude: input.latitude, last_longitude: input.longitude,
+          last_updated_by: user.uid, ...(current === "pendiente" ? { dni_confirmed_at: now } : {}),
+        });
+        const eventRef = doc(collection(firestore, "mobility_events"));
+        batch.set(eventRef, { organization_id: transfer.organization_id, transfer_id: input.id, voter_id: transfer.voter_id,
+          driver_user_id: transfer.driver_user_id, actor_id: user.uid, from_status: current, status,
+          latitude: input.latitude, longitude: input.longitude, created_at: now });
+        await batch.commit();
+        return { data: { status }, error: null };
+      } catch (cause) { return { data: null, error: cause instanceof Error ? cause : new Error("No se pudo registrar el traslado") }; }
+    },
+  },
 };
