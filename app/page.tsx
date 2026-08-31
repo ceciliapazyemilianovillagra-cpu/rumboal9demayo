@@ -136,6 +136,7 @@ function BulkTemplateButton({file,label}:{file:string;label:string}) { return <a
 function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [firstAccess,setFirstAccess]=useState(false);
@@ -144,8 +145,17 @@ function Login() {
     event.preventDefault();
     setBusy(true); setMessage("");
     const normalizedEmail=email.trim().toLowerCase();
+    if(firstAccess&&password!==confirmPassword){setMessage("Las contraseñas no coinciden.");setBusy(false);return;}
+    if(firstAccess&&password.length<6){setMessage("La contraseña debe tener al menos 6 caracteres.");setBusy(false);return;}
     const result = firstAccess ? await supabase.auth.signUpWithPassword({ email: normalizedEmail, password }) : await supabase.auth.signInWithPassword({ email: normalizedEmail, password });
-    if (result.error) setMessage(firstAccess ? "No se pudo crear la clave. Usá una contraseña de al menos 6 caracteres o verificá el correo." : "Correo o contraseña incorrectos. Si es tu primera vez, elegí Crear mi acceso.");
+    const errorCode=String((result.error as {code?:string}|null)?.code||"");
+    if (result.error) {
+      if(firstAccess&&errorCode==="auth/email-already-in-use") setMessage("Este correo ya tiene acceso creado. Volvé a Ingresar o recuperá tu contraseña.");
+      else if(firstAccess&&errorCode==="auth/operation-not-allowed") setMessage("El ingreso por correo todavía no está habilitado en Firebase.");
+      else if(firstAccess&&errorCode==="auth/invalid-email") setMessage("Revisá el correo ingresado.");
+      else if(!firstAccess) setMessage("Usuario o contraseña incorrectos. Si todavía no tenés acceso, elegí Ingreso por primera vez.");
+      else setMessage("No se pudo crear el acceso. Revisá el correo y probá nuevamente.");
+    }
     else {
       const activation=await supabase.access.activateAuthorizedAccess();
       if(activation.error) setMessage("No se pudo verificar tu acceso. Probá nuevamente en unos minutos.");
@@ -170,13 +180,14 @@ function Login() {
       <span>Una herramienta preparada para acompañar campañas de cualquier escala.</span>
     </section>
     <form className="login-card" onSubmit={submit}>
-      <div className="login-heading"><span className="kicker">ACCESO AL EQUIPO</span><h2>{firstAccess?"Crear mi acceso":"Bienvenido"}</h2><p>{firstAccess?"Ingresá tu correo y elegí una contraseña. El referente habilitará tu acceso si ya estás autorizado.":"Ingresá con el correo y la contraseña que registraste."}</p></div>
-      <label>Correo electrónico<input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="nombre@equipo.com" autoComplete="email" /></label>
-      <label>Contraseña<input required type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" autoComplete="current-password" /></label>
+      <div className="login-heading"><span className="kicker">ACCESO AL EQUIPO</span><h2>{firstAccess?"Ingreso por primera vez":"Ingresar"}</h2><p>{firstAccess?"Completá tus datos una sola vez. Si tu correo está autorizado, vas a entrar automáticamente.":"Ingresá con el usuario y contraseña asignados."}</p></div>
+      <label>Usuario / correo electrónico<input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="nombre@correo.com" autoComplete="email" /></label>
+      <label>Contraseña<input required type="password" minLength={firstAccess?6:undefined} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Mínimo 6 caracteres" autoComplete={firstAccess?"new-password":"current-password"} /></label>
+      {firstAccess&&<label>Confirmar contraseña<input required type="password" minLength={6} value={confirmPassword} onChange={(e)=>setConfirmPassword(e.target.value)} placeholder="Repetí la contraseña" autoComplete="new-password" /></label>}
       <div className="login-options"><span>Usuarios autorizados</span><button type="button" onClick={resetPassword}>¿Olvidaste tu contraseña?</button></div>
       {message && <p className="form-message" role="status">{message}</p>}
-      <button className="primary" disabled={busy}>{busy ? "Verificando..." : firstAccess?"Crear mi acceso":"Ingresar a la plataforma"} <span>→</span></button>
-      <button className="text-button login-switch" type="button" onClick={()=>{setFirstAccess(current=>!current);setMessage("");}}>{firstAccess?"Ya tengo una contraseña":"Es mi primera vez · Crear mi acceso"}</button>
+      <button className="primary" disabled={busy}>{busy ? "Verificando..." : firstAccess?"Solicitar acceso":"Ingresar a la plataforma"} <span>→</span></button>
+      <button className="text-button login-switch" type="button" onClick={()=>{setFirstAccess(current=>!current);setMessage("");setConfirmPassword("");}}>{firstAccess?"← Ya tengo usuario y contraseña":"Ingreso por primera vez"}</button>
       <p className="secure-note">● Conexión protegida</p>
     </form>
   </main>;
