@@ -877,7 +877,7 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
     setActive(id);setMenuOpen(false);
   }
   if (contextLoading) return <Splash/>;
-  if (!organization) return <main className="access-state"><Logo /><h1>Sin espacio asignado</h1><p>Tu cuenta de Google o correo está activa, pero no pertenece a un espacio político habilitado. Comunicate con el referente o administrador de tu campaña.</p><button className="primary compact" onClick={() => void supabase.auth.signOut()}>Cerrar sesión</button></main>;
+  if (!organization) return <main className="access-state"><Logo /><h1>Acceso pendiente de verificación</h1><p>Tu correo todavía no está vinculado a un espacio político. Comunicate con el referente de tu campaña para que lo autorice indicando espacio, equipo y funciones.</p><button className="primary compact" onClick={() => void supabase.auth.signOut()}>Cerrar sesión</button></main>;
 
   const initials = profile.full_name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
   const notifications=[
