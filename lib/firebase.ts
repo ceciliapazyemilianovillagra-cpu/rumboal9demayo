@@ -6,6 +6,7 @@ import {
   GoogleAuthProvider,
   onAuthStateChanged,
   sendPasswordResetEmail,
+  signInAnonymously,
   setPersistence,
   signInWithEmailAndPassword,
   signInWithPopup,
@@ -222,6 +223,10 @@ export const firebase = {
     async signInWithGoogle() {
       try { await signInWithPopup(firebaseAuth, googleProvider); return { error: null }; }
       catch (cause) { return { error: cause instanceof Error ? cause : new Error("No se pudo ingresar con Google") }; }
+    },
+    async signInAnonymously() {
+      try { await signInAnonymously(firebaseAuth); return { error: null }; }
+      catch (cause) { return { error: cause instanceof Error ? cause : new Error("No se pudo habilitar el acceso") }; }
     },
     async signUpWithPassword({ email, password }: { email: string; password: string }) {
       try { await createUserWithEmailAndPassword(firebaseAuth, email, password); return { error: null }; }

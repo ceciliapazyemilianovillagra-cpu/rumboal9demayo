@@ -22,6 +22,11 @@ service cloud.firestore {
         invitation(token).data.expires_at_ms > request.time.toMillis() &&
         invitation(token).data.email == request.auth.token.email;
     }
+    function publicLink(token) { return get(/databases/$(database)/documents/public_links/$(token)); }
+    function validPublicLink(token, moduleName) {
+      return signedIn() && token is string && publicLink(token).data.active == true &&
+        publicLink(token).data.module == moduleName && publicLink(token).data.expires_at_ms > request.time.toMillis();
+    }
 
     match /profiles/{uid} {
       allow read: if signedIn();
@@ -80,6 +85,13 @@ service cloud.firestore {
       allow delete: if manager(resource.data.organization_id);
     }
 
+    match /public_links/{token} {
+      allow get: if signedIn() && resource.data.active == true && resource.data.expires_at_ms > request.time.toMillis();
+      allow list: if manager(resource.data.organization_id);
+      allow create: if manager(request.resource.data.organization_id);
+      allow update, delete: if manager(resource.data.organization_id);
+    }
+
     match /voters/{id} {
       allow read: if moduleAccess(resource.data.organization_id, "votantes");
       allow create: if moduleAccess(request.resource.data.organization_id, "votantes");
@@ -112,7 +124,7 @@ service cloud.firestore {
     }
     match /claims/{id} {
       allow read: if moduleAccess(resource.data.organization_id, "gestion");
-      allow create: if moduleAccess(request.resource.data.organization_id, "gestion");
+      allow create: if moduleAccess(request.resource.data.organization_id, "gestion") || (validPublicLink(request.resource.data.public_token, "gestion") && request.resource.data.organization_id == publicLink(request.resource.data.public_token).data.organization_id && request.resource.data.created_via == "public");
       allow update, delete: if moduleAccess(resource.data.organization_id, "gestion");
     }
     match /projects/{id} {
@@ -163,7 +175,7 @@ service cloud.firestore {
     }
     match /event_attendance/{id} {
       allow read: if moduleAccess(resource.data.organization_id, "eventos");
-      allow create: if moduleAccess(request.resource.data.organization_id, "eventos");
+      allow create: if moduleAccess(request.resource.data.organization_id, "eventos") || (validPublicLink(request.resource.data.public_token, "eventos") && request.resource.data.organization_id == publicLink(request.resource.data.public_token).data.organization_id && request.resource.data.created_via == "public");
       allow update, delete: if moduleAccess(resource.data.organization_id, "eventos");
     }
     match /communications/{id} {
@@ -173,12 +185,12 @@ service cloud.firestore {
     }
     match /logistics_items/{id} {
       allow read: if moduleAccess(resource.data.organization_id, "logistica");
-      allow create: if moduleAccess(request.resource.data.organization_id, "logistica");
+      allow create: if moduleAccess(request.resource.data.organization_id, "logistica") || (validPublicLink(request.resource.data.public_token, "logistica") && request.resource.data.organization_id == publicLink(request.resource.data.public_token).data.organization_id && request.resource.data.created_via == "public");
       allow update, delete: if moduleAccess(resource.data.organization_id, "logistica");
     }
     match /election_day_assignments/{id} {
       allow read: if moduleAccess(resource.data.organization_id, "fiscalizacion");
-      allow create: if moduleAccess(request.resource.data.organization_id, "fiscalizacion");
+      allow create: if moduleAccess(request.resource.data.organization_id, "fiscalizacion") || (validPublicLink(request.resource.data.public_token, "fiscalizacion") && request.resource.data.organization_id == publicLink(request.resource.data.public_token).data.organization_id && request.resource.data.created_via == "public");
       allow update, delete: if moduleAccess(resource.data.organization_id, "fiscalizacion");
     }
     function nagleWorkspace(orgId) {
