@@ -3,13 +3,11 @@ import {
   browserLocalPersistence,
   createUserWithEmailAndPassword,
   getAuth,
-  GoogleAuthProvider,
   onAuthStateChanged,
   sendPasswordResetEmail,
   signInAnonymously,
   setPersistence,
   signInWithEmailAndPassword,
-  signInWithPopup,
   signOut,
   type User as FirebaseUser,
 } from "firebase/auth";
@@ -43,8 +41,6 @@ const firebaseConfig = {
 export const firebaseApp = getApps().length ? getApp() : initializeApp(firebaseConfig);
 export const firebaseAuth = getAuth(firebaseApp);
 export const firestore = getFirestore(firebaseApp);
-const googleProvider = new GoogleAuthProvider();
-googleProvider.setCustomParameters({ prompt: "select_account" });
 
 if (typeof window !== "undefined") {
   void setPersistence(firebaseAuth, browserLocalPersistence).catch(() => undefined);
@@ -220,10 +216,6 @@ export const firebase = {
       try { await signInWithEmailAndPassword(firebaseAuth, email, password); return { error: null }; }
       catch (cause) { return { error: cause instanceof Error ? cause : new Error("No se pudo ingresar") }; }
     },
-    async signInWithGoogle() {
-      try { await signInWithPopup(firebaseAuth, googleProvider); return { error: null }; }
-      catch (cause) { return { error: cause instanceof Error ? cause : new Error("No se pudo ingresar con Google") }; }
-    },
     async signInAnonymously() {
       try { await signInAnonymously(firebaseAuth); return { error: null }; }
       catch (cause) { return { error: cause instanceof Error ? cause : new Error("No se pudo habilitar el acceso") }; }
@@ -285,6 +277,41 @@ export const firebase = {
         return { data: { organization_id: invitation.organization_id }, error: null };
       } catch (cause) {
         return { data: null, error: cause instanceof Error ? cause : new Error("No se pudo utilizar la invitación") };
+      }
+    },
+  },
+  access: {
+    async activateAuthorizedAccess() {
+      try {
+        const user = firebaseAuth.currentUser;
+        if (!user?.email) throw new Error("Ingresá con un correo válido.");
+        await user.getIdToken(true);
+        const email = user.email.trim().toLowerCase();
+        const authorizationRef = doc(firestore, "authorized_access", email);
+        const authorizationSnapshot = await getDoc(authorizationRef);
+        if (!authorizationSnapshot.exists() || authorizationSnapshot.data().active !== true) {
+          await setDoc(doc(firestore, "access_requests", user.uid), {
+            user_id: user.uid, email, status: "pending", requested_at: new Date().toISOString(),
+          }, { merge: true });
+          return { data: null, pending: true, error: null };
+        }
+        const authorization = authorizationSnapshot.data();
+        const membershipId = `${authorization.organization_id}_${user.uid}`;
+        const batch = writeBatch(firestore);
+        batch.set(doc(firestore, "profiles", user.uid), {
+          id: user.uid, full_name: authorization.full_name || email, email, role: authorization.role || "consulta",
+          active: true, is_platform_admin: false, authorization_email: email, updated_at: new Date().toISOString(),
+        }, { merge: true });
+        batch.set(doc(firestore, "memberships", membershipId), {
+          organization_id: authorization.organization_id, user_id: user.uid, team_id: authorization.team_id ?? null,
+          role: authorization.role || "consulta", active: true, allowed_modules: authorization.allowed_modules ?? [],
+          authorization_email: email, updated_at: new Date().toISOString(),
+        }, { merge: true });
+        batch.set(doc(firestore, "access_requests", user.uid), { user_id: user.uid, email, status: "approved", organization_id: authorization.organization_id, updated_at: new Date().toISOString() }, { merge: true });
+        await batch.commit();
+        return { data: { organization_id: authorization.organization_id }, pending: false, error: null };
+      } catch (cause) {
+        return { data: null, pending: false, error: cause instanceof Error ? cause : new Error("No se pudo verificar el acceso") };
       }
     },
   },

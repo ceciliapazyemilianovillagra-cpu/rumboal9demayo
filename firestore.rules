@@ -22,6 +22,10 @@ service cloud.firestore {
         invitation(token).data.expires_at_ms > request.time.toMillis() &&
         invitation(token).data.email == request.auth.token.email;
     }
+    function authorization() { return get(/databases/$(database)/documents/authorized_access/$(request.auth.token.email)); }
+    function validAuthorization() {
+      return signedIn() && authorization().data.active == true;
+    }
     function publicLink(token) { return get(/databases/$(database)/documents/public_links/$(token)); }
     function validPublicLink(token, moduleName) {
       return signedIn() && token is string && publicLink(token).data.active == true &&
@@ -46,6 +50,10 @@ service cloud.firestore {
         request.resource.data.is_platform_admin == false &&
         request.resource.data.active == true &&
         request.resource.data.role == invitation(request.resource.data.invite_token).data.role
+      ) || (
+        request.auth.uid == uid && validAuthorization() &&
+        request.resource.data.is_platform_admin == false && request.resource.data.active == true &&
+        request.resource.data.role == authorization().data.role
       );
       allow delete: if platformAdmin();
     }
@@ -62,6 +70,11 @@ service cloud.firestore {
         request.resource.data.organization_id == invitation(request.resource.data.invite_token).data.organization_id &&
         request.resource.data.role == invitation(request.resource.data.invite_token).data.role &&
         request.resource.data.allowed_modules == invitation(request.resource.data.invite_token).data.allowed_modules;
+      allow create: if validAuthorization() &&
+        request.resource.data.user_id == request.auth.uid &&
+        request.resource.data.organization_id == authorization().data.organization_id &&
+        request.resource.data.role == authorization().data.role &&
+        request.resource.data.allowed_modules == authorization().data.allowed_modules;
       allow delete: if platformAdmin() || manager(resource.data.organization_id);
     }
     match /invitations/{token} {
@@ -90,6 +103,23 @@ service cloud.firestore {
       allow list: if manager(resource.data.organization_id);
       allow create: if manager(request.resource.data.organization_id);
       allow update, delete: if manager(resource.data.organization_id);
+    }
+    match /authorized_access/{email} {
+      allow get: if platformAdmin() || (signedIn() && email == request.auth.token.email);
+      allow list: if platformAdmin() || manager(resource.data.organization_id);
+      allow create: if manager(request.resource.data.organization_id);
+      allow update: if manager(resource.data.organization_id);
+      allow delete: if manager(resource.data.organization_id);
+    }
+    match /access_requests/{uid} {
+      allow get: if platformAdmin() || (signedIn() && uid == request.auth.uid);
+      allow list: if platformAdmin();
+      allow create: if signedIn() && uid == request.auth.uid && request.resource.data.user_id == request.auth.uid &&
+        request.resource.data.email == request.auth.token.email && request.resource.data.status == "pending";
+      allow update: if platformAdmin() || (signedIn() && uid == request.auth.uid && validAuthorization() &&
+        request.resource.data.user_id == request.auth.uid && request.resource.data.email == request.auth.token.email &&
+        request.resource.data.status == "approved");
+      allow delete: if platformAdmin();
     }
 
     match /voters/{id} {

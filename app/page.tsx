@@ -41,7 +41,7 @@ type NotificationRead = { id:string; organization_id:string; user_id:string; not
 type CampaignRecord = { id:string; organization_id:string; title:string; status:string; priority:string; responsible_user_id:string|null; scheduled_for:string|null; location:string|null; notes:string|null; created_at:string; record_type?:string; contact_name?:string|null; contact_phone?:string|null; linked_location_id?:string|null };
 type EventAttendance = { id:string; organization_id:string; event_id:string; full_name:string; phone:string|null; neighborhood:string|null; source:string; created_at:string };
 type PublicLink = { id:string; organization_id:string; module:string; active:boolean; expires_at_ms:number; label?:string };
-type Invitation = { id:string; organization_id:string; full_name:string; email:string; team_id:string|null; role:Role; allowed_modules:string[]; status:"pending"|"used"|"revoked"; expires_at_ms:number; created_at:string };
+type AuthorizedAccess = { id:string; organization_id:string; full_name:string; email:string; team_id:string|null; role:Role; allowed_modules:string[]; active:boolean; created_at?:string };
 const configurableModules=[["votantes","Votantes"],["sedes","Locaciones"],["presupuesto","Presupuesto"],["gestion","Gestión"],["agenda","Agenda"],["eventos","Eventos"],["logistica","Logística"],["fiscalizacion","Fiscalización electoral"]] as const;
 
 const roleLabels: Record<Role, string> = {
@@ -137,16 +137,19 @@ function Login() {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
-  const [inviteToken,setInviteToken]=useState("");
-  useEffect(()=>{setInviteToken(new URLSearchParams(window.location.search).get("invite")??"");},[]);
+  const [firstAccess,setFirstAccess]=useState(false);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     setBusy(true); setMessage("");
-    let result = inviteToken ? await supabase.auth.signUpWithPassword({ email: email.trim(), password }) : await supabase.auth.signInWithPassword({ email: email.trim(), password });
-    if (inviteToken && result.error?.message.includes("email-already-in-use")) result = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-    if (result.error) setMessage(inviteToken?"No se pudo validar la invitación. Usá el correo invitado y una contraseña de al menos 6 caracteres.":"No pudimos ingresar. Revisá el correo y la contraseña.");
-    else if(inviteToken){const sessionResult=await supabase.auth.getSession();if(!sessionResult.data.session)setMessage("La cuenta fue creada, pero no se pudo completar la invitación. Intentá ingresar nuevamente desde el enlace.");else{const redeemed=await supabase.invitations.redeem(inviteToken);if(redeemed.error)setMessage(`No se pudo asociar la cuenta al espacio: ${redeemed.error.message}`);else window.history.replaceState({},"",window.location.pathname);}}
+    const normalizedEmail=email.trim().toLowerCase();
+    const result = firstAccess ? await supabase.auth.signUpWithPassword({ email: normalizedEmail, password }) : await supabase.auth.signInWithPassword({ email: normalizedEmail, password });
+    if (result.error) setMessage(firstAccess ? "No se pudo crear la clave. Usá una contraseña de al menos 6 caracteres o verificá el correo." : "Correo o contraseña incorrectos. Si es tu primera vez, elegí Crear mi acceso.");
+    else {
+      const activation=await supabase.access.activateAuthorizedAccess();
+      if(activation.error) setMessage("No se pudo verificar tu acceso. Probá nuevamente en unos minutos.");
+      else if(activation.pending) setMessage("Tu solicitud quedó enviada. Esperá la verificación del referente de tu campaña.");
+    }
     setBusy(false);
   }
 
@@ -158,13 +161,6 @@ function Login() {
     setBusy(false);
   }
 
-  async function googleLogin() {
-    setBusy(true); setMessage("");
-    const { error } = await supabase.auth.signInWithGoogle();
-    if (error) setMessage("No se pudo ingresar con Google. Verificá que uses la cuenta autorizada por tu espacio.");
-    setBusy(false);
-  }
-
   return <main className="login-shell">
     <section className="login-brand">
       <Logo />
@@ -173,14 +169,13 @@ function Login() {
       <span>Una herramienta preparada para acompañar campañas de cualquier escala.</span>
     </section>
     <form className="login-card" onSubmit={submit}>
-      <div className="login-heading"><span className="kicker">{inviteToken?"INVITACIÓN SEGURA":"ACCESO SEGURO"}</span><h2>{inviteToken?"Sumate a tu espacio":"Bienvenido"}</h2><p>{inviteToken?"Creá tu cuenta o ingresá con Google usando exactamente el correo invitado.":"Ingresá con la cuenta asignada a tu equipo."}</p></div>
+      <div className="login-heading"><span className="kicker">ACCESO AL EQUIPO</span><h2>{firstAccess?"Crear mi acceso":"Bienvenido"}</h2><p>{firstAccess?"Ingresá tu correo y elegí una contraseña. El referente habilitará tu acceso si ya estás autorizado.":"Ingresá con el correo y la contraseña que registraste."}</p></div>
       <label>Correo electrónico<input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="nombre@equipo.com" autoComplete="email" /></label>
       <label>Contraseña<input required type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" autoComplete="current-password" /></label>
       <div className="login-options"><span>Usuarios autorizados</span><button type="button" onClick={resetPassword}>¿Olvidaste tu contraseña?</button></div>
       {message && <p className="form-message" role="status">{message}</p>}
-      <button className="primary" disabled={busy}>{busy ? "Verificando..." : inviteToken?"Aceptar invitación":"Ingresar a la plataforma"} <span>→</span></button>
-      <div className="login-divider"><span>o</span></div>
-      <button className="google-login" type="button" onClick={googleLogin} disabled={busy}><b>G</b> Continuar con Google</button>
+      <button className="primary" disabled={busy}>{busy ? "Verificando..." : firstAccess?"Crear mi acceso":"Ingresar a la plataforma"} <span>→</span></button>
+      <button className="text-button login-switch" type="button" onClick={()=>{setFirstAccess(current=>!current);setMessage("");}}>{firstAccess?"Ya tengo una contraseña":"Es mi primera vez · Crear mi acceso"}</button>
       <p className="secure-note">● Conexión protegida</p>
     </form>
   </main>;
@@ -424,15 +419,15 @@ function AdminView({ profile, organization, organizations, teams, members, refer
   const [teamOpen, setTeamOpen] = useState(false);
   const [teamSaving, setTeamSaving] = useState(false);
   const [orgOpen, setOrgOpen] = useState(false);
-  const [inviteOpen, setInviteOpen] = useState(false);
-  const [inviting, setInviting] = useState(false);
+  const [authorizationOpen, setAuthorizationOpen] = useState(false);
+  const [authorizing, setAuthorizing] = useState(false);
   const [message, setMessage] = useState("");
   const [generatedLink,setGeneratedLink]=useState("");
-  const [invitations,setInvitations]=useState<Invitation[]>([]);
+  const [authorizations,setAuthorizations]=useState<AuthorizedAccess[]>([]);
   const [adminTab,setAdminTab]=useState<"espacio"|"equipos"|"usuarios"|"enlaces"|"auditoria">("espacio");
   const [publicLinks,setPublicLinks]=useState<PublicLink[]>([]);
-  const loadInvitations=useCallback(async()=>{const result=await supabase.from("invitations").select("*").eq("organization_id",organization.id).order("created_at",{ascending:false}).limit(100);setInvitations(result.error?[]:(result.data??[]) as Invitation[]);},[organization.id]);
-  useEffect(()=>{void loadInvitations();},[loadInvitations]);
+  const loadAuthorizations=useCallback(async()=>{const result=await supabase.from("authorized_access").select("*").eq("organization_id",organization.id).order("created_at",{ascending:false}).limit(500);setAuthorizations(result.error?[]:(result.data??[]) as AuthorizedAccess[]);},[organization.id]);
+  useEffect(()=>{void loadAuthorizations();},[loadAuthorizations]);
   const loadPublicLinks=useCallback(async()=>{const result=await supabase.from("public_links").select("*").eq("organization_id",organization.id).order("created_at",{ascending:false}).limit(100);setPublicLinks(result.error?[]:(result.data??[]) as PublicLink[]);},[organization.id]);
   useEffect(()=>{void loadPublicLinks();},[loadPublicLinks]);
   async function createPublicLink(formType:"gestion"|"eventos"|"logistica"|"fiscalizacion"){const id=`${crypto.randomUUID().replaceAll("-","")}${crypto.randomUUID().replaceAll("-","")}`;const {error}=await supabase.from("public_links").insert({id,organization_id:organization.id,module:formType,label:`${formType} · ${organization.candidate_name}`,active:true,expires_at_ms:Date.now()+180*24*60*60*1000,created_by:profile.id});if(error)setMessage("No se pudo crear el enlace.");else{const url=`${window.location.origin}/?public=${id}&form=${formType}`;setGeneratedLink(url);void navigator.clipboard.writeText(url);setMessage("Enlace creado y copiado. Podés enviarlo o convertirlo en QR.");await loadPublicLinks();}}
@@ -463,25 +458,25 @@ function AdminView({ profile, organization, organizations, teams, members, refer
     if(error)setMessage("No se pudieron actualizar los permisos.");else await reloadAll();
   }
 
-  async function inviteMember(event: FormEvent<HTMLFormElement>) {
+  async function authorizeMember(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
     const data = new FormData(form);
-    setInviting(true); setMessage("");
+    setAuthorizing(true); setMessage("");
     const role=String(data.get("role")||"territorio") as Role;
     const defaults=role==="coordinacion"?configurableModules.map(([id])=>id):role==="territorio"?["sedes","gestion","agenda","eventos"]:role==="finanzas"?["presupuesto","agenda","logistica"]:["agenda"];
-    const token=`${crypto.randomUUID().replaceAll("-","")}${crypto.randomUUID().replaceAll("-","")}`;
-    const { error } = await supabase.from("invitations").insert({
-      id:token,organization_id:organization.id,full_name:String(data.get("full_name")||"").trim().slice(0,120),email:String(data.get("email")||"").trim().toLowerCase(),team_id:data.get("team_id")||null,role,allowed_modules:defaults,status:"pending",expires_at_ms:Date.now()+7*24*60*60*1000,created_by:profile.id,
+    const email=String(data.get("email")||"").trim().toLowerCase();
+    const { error } = await supabase.from("authorized_access").insert({
+      id:email, organization_id:organization.id,full_name:String(data.get("full_name")||"").trim().slice(0,120),email,team_id:data.get("team_id")||null,role,allowed_modules:defaults,active:true,created_by:profile.id,created_at:new Date().toISOString(),
     });
-    if (error) setMessage("No se pudo generar la invitación.");
+    if (error) setMessage("No se pudo autorizar el correo. Verificá que sea correcto.");
     else {
-      const link=`${window.location.origin}/?invite=${token}`;setGeneratedLink(link);setMessage("Invitación creada. Copiá el enlace y envialo por WhatsApp o correo.");
+      setMessage("Correo autorizado. La persona ya puede abrir el enlace único y crear su contraseña.");
       form.reset();
-      setInviteOpen(false);
-      await loadInvitations();
+      setAuthorizationOpen(false);
+      await loadAuthorizations();
     }
-    setInviting(false);
+    setAuthorizing(false);
   }
 
   async function toggleMember(member: Member) {
@@ -499,7 +494,7 @@ function AdminView({ profile, organization, organizations, teams, members, refer
     setMessage(error?"No se pudo retirar el usuario.":"Usuario retirado del espacio.");
     if (!error) await reloadAll();
   }
-  async function revokeInvitation(invitation:Invitation){const {error}=await supabase.from("invitations").update({status:"revoked"}).eq("id",invitation.id).eq("organization_id",organization.id);setMessage(error?"No se pudo revocar la invitación.":"Invitación revocada.");if(!error)await loadInvitations();}
+  async function toggleAuthorization(authorization:AuthorizedAccess){const {error}=await supabase.from("authorized_access").update({active:!authorization.active}).eq("id",authorization.id).eq("organization_id",organization.id);setMessage(error?"No se pudo actualizar la autorización.":authorization.active?"Correo desautorizado.":"Correo habilitado.");if(!error)await loadAuthorizations();}
 
   async function createOrganization(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); const form = event.currentTarget; const data = new FormData(form);
@@ -558,14 +553,14 @@ function AdminView({ profile, organization, organizations, teams, members, refer
     </div>}
     {adminTab==="usuarios"&&<div className="admin-single">
       <article className="panel admin-section">
-        <PanelHead kicker="PERSONAS Y PERMISOS" title="Usuarios" aside={<div className="user-tools"><button className="text-button" onClick={() => setInviteOpen(!inviteOpen)}>＋ Crear invitación</button></div>} />
-        {inviteOpen && <form className="invite-form" onSubmit={inviteMember}>
+        <PanelHead kicker="PERSONAS Y PERMISOS" title="Usuarios" aside={<div className="user-tools"><button className="text-button" onClick={() => setAuthorizationOpen(!authorizationOpen)}>＋ Autorizar correo</button></div>} />
+        <p className="form-message">Un solo enlace para todos: cada persona ingresa su correo, crea su clave una vez y sólo accede si este correo fue autorizado aquí.</p>
+        {authorizationOpen && <form className="invite-form" onSubmit={authorizeMember}>
           <div><label>Nombre completo<input name="full_name" required placeholder="Ana Páez" /></label><label>Correo electrónico<input name="email" required type="email" placeholder="ana@correo.com" /></label></div>
           <div><label>Equipo<select name="team_id"><option value="">Sin equipo</option>{teams.map((team) => <option value={team.id} key={team.id}>{team.name}</option>)}</select></label><label>Rol<select name="role" defaultValue="territorio">{Object.entries(roleLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label></div>
-          <div className="invite-actions"><button type="button" onClick={() => setInviteOpen(false)}>Cancelar</button><button className="primary compact" disabled={inviting}>{inviting ? "Generando..." : "Generar enlace"}</button></div>
+          <div className="invite-actions"><button type="button" onClick={() => setAuthorizationOpen(false)}>Cancelar</button><button className="primary compact" disabled={authorizing}>{authorizing ? "Autorizando..." : "Autorizar correo"}</button></div>
         </form>}
-        {generatedLink&&<div className="generated-invite"><div><strong>Enlace listo para enviar</strong><small>Vence en 7 días y funciona una sola vez.</small></div><input readOnly value={generatedLink}/><button className="primary compact" onClick={()=>{void navigator.clipboard.writeText(generatedLink);setMessage("Enlace copiado.")}}>Copiar enlace</button></div>}
-        {invitations.length>0&&<div className="invitation-list">{invitations.map(invitation=><div key={invitation.id}><span>{invitation.full_name.slice(0,1).toUpperCase()}</span><div><strong>{invitation.full_name}</strong><small>{invitation.email} · {invitation.status==="pending"?"Pendiente":invitation.status==="used"?"Utilizada":"Revocada"}</small></div><em>{new Date(invitation.expires_at_ms).toLocaleDateString("es-AR")}</em>{invitation.status==="pending"&&<><button onClick={()=>{const link=`${window.location.origin}/?invite=${invitation.id}`;setGeneratedLink(link);void navigator.clipboard.writeText(link);setMessage("Enlace copiado.")}}>Copiar</button><button className="member-delete" onClick={()=>revokeInvitation(invitation)}>Revocar</button></>}</div>)}</div>}
+        {authorizations.length>0&&<div className="invitation-list">{authorizations.map(authorization=><div key={authorization.id}><span>{authorization.full_name.slice(0,1).toUpperCase()}</span><div><strong>{authorization.full_name}</strong><small>{authorization.email} · {authorization.active?"Autorizado":"Desactivado"}</small></div><em>{teams.find(team=>team.id===authorization.team_id)?.name||"Sin equipo"}</em><button className={`member-toggle ${authorization.active?"deactivate":"activate"}`} onClick={()=>void toggleAuthorization(authorization)}>{authorization.active?"Desactivar":"Activar"}</button></div>)}</div>}
         <div className="member-list">{members.map((member) => <div className={!member.active ? "member-disabled" : ""} key={member.user_id}>
           <span className="avatar">{(member.profiles?.full_name ?? "U").split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase()}</span>
           <div><strong>{member.profiles?.full_name}</strong><small>{member.active ? "Usuario habilitado" : "Acceso desactivado"}</small></div>
@@ -574,7 +569,7 @@ function AdminView({ profile, organization, organizations, teams, members, refer
           <div className="member-actions"><button className="text-button" onClick={()=>void resetMemberPassword(member)}>Blanquear clave</button><button className={`member-toggle ${member.active ? "deactivate" : "activate"}`} disabled={member.user_id === profile.id} onClick={() => toggleMember(member)}>{member.active ? "Desactivar" : "Activar"}</button><button className="member-delete" disabled={member.user_id === profile.id} onClick={() => removeMember(member)}>Borrar</button></div>
           {member.role!=="admin"&&<div className="module-permissions">{configurableModules.map(([id,label])=><label key={id}><input type="checkbox" checked={(member.allowed_modules??(member.role==="coordinacion"?configurableModules.map(([x])=>x):member.role==="territorio"?["sedes","gestion","agenda","eventos"]:member.role==="finanzas"?["presupuesto","agenda","logistica"]:["agenda"])).includes(id)} onChange={()=>toggleModule(member,id)}/>{label}</label>)}</div>}
         </div>)}</div>
-        <div className="info-banner compact-info">Estos son los usuarios que pueden ingresar al sistema. Cada invitado crea su propia contraseña y recibe solamente los módulos habilitados.</div>
+        <div className="info-banner compact-info">Los correos autorizados pueden usar siempre el mismo enlace: <strong>{typeof window!=="undefined"?window.location.origin:""}</strong>. Cada usuario crea su contraseña una sola vez y recibe solamente los módulos habilitados.</div>
       </article>
       <article className="panel admin-section">
         <PanelHead kicker="EQUIPO OPERATIVO" title="Colaboradores de campo" aside={`${referents.length} personas`}/>
@@ -887,11 +882,7 @@ export default function Home() {
     const timer = window.setTimeout(() => {
       setLoading(true);
       void (async () => {
-        const inviteToken=new URLSearchParams(window.location.search).get("invite");
-        if(inviteToken){
-          const redeemed=await supabase.invitations.redeem(inviteToken);
-          if(!redeemed.error)window.history.replaceState({},"",window.location.pathname);
-        }
+        await supabase.access.activateAuthorizedAccess();
         const profileResult = await supabase.from("profiles").select("id,full_name,role,active,is_platform_admin").eq("id", session.user.id).maybeSingle();
         let currentProfile = profileResult.data as Profile | null;
         const isBootstrapAdmin = session.user.email?.toLowerCase() === "emilianovillagra@gmail.com";
