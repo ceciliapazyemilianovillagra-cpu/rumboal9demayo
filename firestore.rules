@@ -161,6 +161,11 @@ service cloud.firestore {
       allow create: if moduleAccess(request.resource.data.organization_id, "eventos");
       allow update, delete: if moduleAccess(resource.data.organization_id, "eventos");
     }
+    match /event_attendance/{id} {
+      allow read: if moduleAccess(resource.data.organization_id, "eventos");
+      allow create: if moduleAccess(request.resource.data.organization_id, "eventos");
+      allow update, delete: if moduleAccess(resource.data.organization_id, "eventos");
+    }
     match /communications/{id} {
       allow read: if moduleAccess(resource.data.organization_id, "comunicacion");
       allow create: if moduleAccess(request.resource.data.organization_id, "comunicacion");
