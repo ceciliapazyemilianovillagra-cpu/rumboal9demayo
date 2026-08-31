@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { firebase as supabase, type Session, type User } from "../lib/firebase";
 import { TerritoryMap, type MapPoint } from "./territory-map";
+import { StaffWorkspace, isNagleWorkspace } from "./staff-workspace";
 
 type Role = "admin" | "coordinacion" | "territorio" | "finanzas" | "consulta";
 type Profile = { id: string; full_name: string; role: Role; active: boolean; is_platform_admin: boolean };
@@ -610,6 +611,7 @@ function HomeDashboard({ organization, organizations, canAdmin, selectOrganizati
   const todayLabel=new Date().toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long"});
   return <>
     <section className="hero-row">
+      {isNagleWorkspace(organization)&&<img className="nagle-portrait" src="/ernesto-nagle.png" alt="Ernesto Nagle" width={220} height={270}/>}
       <div className="hero-copy">
         <div className="hero-status"><i/> OPERACIÓN EN CURSO <span>{todayLabel}</span></div>
         <p className="kicker">CENTRO DE OPERACIONES</p>
@@ -758,7 +760,8 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
     if (!profile.is_platform_admin) organizationsQuery.eq("active", true);
     const { data } = await organizationsQuery.order("name");
     const list = (data ?? []) as Organization[]; setOrganizations(list);
-    setOrganizationId((current) => current && list.some((org) => org.id === current) ? current : list[0]?.id ?? "");
+    const requested=new URLSearchParams(window.location.search).get("workspace");
+    setOrganizationId((current) => current && list.some((org) => org.id === current) ? current : list.find(org=>org.id===requested)?.id ?? list[0]?.id ?? "");
     if(list.length===0)setContextLoading(false);
   }, [profile.is_platform_admin]);
   const loadContext = useCallback(async () => {
@@ -807,6 +810,7 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
 
   async function reloadAll() { await loadOrganizations(); await loadContext(); }
   const allModules = [
+    ...(isNagleWorkspace(organization)?[{id:"organizacion",label:"Equipo y jornadas",icon:"◈"}]:[]),
     { id: "inicio", label: "Inicio", icon: "⌂" }, { id: "votantes", label: "Votantes", icon: "◎" },
     { id: "sedes", label: "Sedes", icon: "◇" }, { id: "presupuesto", label: "Presupuesto", icon: "$" },
     { id: "gestion", label: "Gestión", icon: "!" },
@@ -821,7 +825,8 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
     { id: "fiscalizacion", label: "Fiscalización", icon: "⚑" },
     ...(canAdmin ? [{ id: "admin", label: "Administración", icon: "⚙" }] : []),
   ];
-  const modules=allModules.filter(item=>item.id==="inicio"||item.id==="admin"||profile.is_platform_admin||orgRole==="admin"||(membership?.allowed_modules??(orgRole==="coordinacion"?configurableModules.map(([id])=>id):orgRole==="territorio"?["sedes","gestion","agenda","propuestas","territorio"]:orgRole==="finanzas"?["presupuesto","agenda"]:["agenda"])).includes(item.id));
+  const modules=allModules.filter(item=>item.id==="organizacion"||item.id==="inicio"||item.id==="admin"||profile.is_platform_admin||orgRole==="admin"||(membership?.allowed_modules??(orgRole==="coordinacion"?configurableModules.map(([id])=>id):orgRole==="territorio"?["sedes","gestion","agenda","propuestas","territorio"]:orgRole==="finanzas"?["presupuesto","agenda"]:["agenda"])).includes(item.id));
+  useEffect(()=>{if(isNagleWorkspace(organization)&&new URLSearchParams(window.location.search).get("module")==="organizacion")setActive("organizacion");},[organization?.id]);
   function go(id: string) {
     if (id === "presupuesto" && !canFinance) return setNotice("Tu rol no tiene acceso al presupuesto.");
     if (id === "admin" && !canAdmin) return setNotice("Tu rol no tiene acceso a Administración.");
@@ -858,6 +863,7 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
     </header>
     {bellOpen&&<aside className="notification-panel"><div><span><strong>Notificaciones</strong><small>{unreadNotifications.length} sin leer</small></span><button onClick={()=>setBellOpen(false)}>×</button></div>{unreadNotifications.length>0&&<button className="notification-read-all" onClick={()=>void markAllNotificationsRead()}>✓ Marcar todas como leídas</button>}{notifications.length===0?<Empty title="Todo al día" text="No hay avisos urgentes ni vencimientos cercanos."/>:notifications.map(item=><button className={readIds.has(item.id)?"is-read":""} key={item.id} onClick={()=>{void markNotificationRead(item.id);go(item.module);setBellOpen(false)}}><i/><span><b>{item.title}</b><small>{item.text}</small></span></button>)}</aside>}
     <div className="page module-stage" key={active}>
+      {active === "organizacion" && isNagleWorkspace(organization) && <StaffWorkspace key={organization.id} organizationId={organization.id} userId={profile.id} canManage={canAdmin||orgRole==="coordinacion"} teams={teams} members={members} reload={loadContext}/>}
       {active === "inicio" && <HomeDashboard organization={organization} organizations={organizations} canAdmin={canAdmin} selectOrganization={setOrganizationId} teams={teams} members={members} headquarters={headquarters} entries={entries} claims={claims} projects={projects} activities={activities} referents={referents} voters={voters} go={go} />}
       {active === "votantes" && <VotersView user={session.user} organization={organization} items={voterImports} voters={voters} reload={loadContext}/>}
       {active === "sedes" && <HeadquartersView organization={organization} teams={teams} members={members} items={headquarters} reload={loadContext} />}
