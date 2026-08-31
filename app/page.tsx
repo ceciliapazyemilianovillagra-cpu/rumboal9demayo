@@ -394,6 +394,7 @@ function AdminView({ profile, organization, organizations, teams, members, refer
   reloadAll: () => Promise<void>; selectOrganization: (id: string) => void;
 }) {
   const [teamOpen, setTeamOpen] = useState(false);
+  const [teamSaving, setTeamSaving] = useState(false);
   const [orgOpen, setOrgOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviting, setInviting] = useState(false);
@@ -406,9 +407,14 @@ function AdminView({ profile, organization, organizations, teams, members, refer
 
   async function createTeam(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); const form = event.currentTarget; const data = new FormData(form);
-    const { error } = await supabase.from("teams").insert({ organization_id: organization.id, name: data.get("name"), description: data.get("description") || null });
-    if (error) setMessage("No se pudo crear el equipo. Revisá que el nombre no esté repetido.");
-    else { form.reset(); setTeamOpen(false); await reloadAll(); }
+    if(teamSaving)return;
+    const name=String(data.get("name")??"").trim();
+    if(!name)return setMessage("Escribí el nombre del equipo.");
+    setTeamSaving(true);setMessage("");
+    const { error } = await supabase.from("teams").insert({ organization_id: organization.id, name, description: data.get("description") || null, active:true });
+    if (error) setMessage(`No se pudo crear el equipo: ${error.message}`);
+    else { form.reset(); setTeamOpen(false); await reloadAll(); setMessage("Equipo creado. Ya está disponible para asignarlo a usuarios."); }
+    setTeamSaving(false);
   }
 
   async function updateMember(userId: string, field: "team_id" | "role", value: string) {
@@ -610,7 +616,7 @@ function HomeDashboard({ organization, organizations, canAdmin, selectOrganizati
   const budgetUse=totals.ingreso?(totals.gasto+totals.compromiso)/totals.ingreso*100:0;
   const todayLabel=new Date().toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long"});
   return <>
-    <section className="hero-row">
+    <section className={`hero-row ${isNagleWorkspace(organization)?"nagle-hero":""}`}>
       {isNagleWorkspace(organization)&&<img className="nagle-portrait" src="/ernesto-nagle.png" alt="Ernesto Nagle" width={220} height={270}/>}
       <div className="hero-copy">
         <div className="hero-status"><i/> OPERACIÓN EN CURSO <span>{todayLabel}</span></div>
@@ -767,7 +773,7 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
   const loadContext = useCallback(async () => {
     if (!organizationId) return;
     const [teamResult, memberResult, sedeResult, budgetResult, claimResult, projectResult, proposalResult, activityResult, referentResult,voterResult,importResult,auditResult,notificationReadResult,...campaignResults] = await Promise.all([
-      supabase.from("teams").select("*").eq("organization_id", organizationId).eq("active", true).order("name"),
+      supabase.from("teams").select("*").eq("organization_id", organizationId).order("name"),
       supabase.from("memberships").select("organization_id,user_id,team_id,role,active,allowed_modules,profiles(id,full_name,active)").eq("organization_id", organizationId),
       supabase.from("headquarters").select("id,name,address,circuit,phone,team_id,responsible_user_id,active,latitude,longitude").eq("organization_id", organizationId).eq("active", true).order("name"),
       supabase.from("budget_entries").select("id,kind,category,description,amount,occurred_on,status,payment_method").eq("organization_id", organizationId).order("occurred_on", { ascending: false }).limit(100),
@@ -782,7 +788,7 @@ function Dashboard({ session, profile }: { session: Session; profile: Profile })
       supabase.from("notification_reads").select("*").eq("user_id",profile.id).limit(500),
       ...Object.values(campaignModuleConfig).map(config=>supabase.from(config.collection).select("*").eq("organization_id",organizationId).order("created_at",{ascending:false}).limit(300)),
     ]);
-    setTeams((teamResult.data ?? []) as Team[]);
+    setTeams(((teamResult.data ?? []) as Team[]).filter(team=>team.active!==false));
     setMembers((memberResult.data ?? []) as unknown as Member[]);
     setHeadquarters((sedeResult.data ?? []) as Headquarters[]);
     setEntries(budgetResult.error ? [] : (budgetResult.data ?? []) as BudgetEntry[]);
